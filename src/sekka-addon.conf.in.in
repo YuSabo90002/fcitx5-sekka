@@ -1,0 +1,14 @@
+[Addon]
+Name=Sekka
+Category=InputMethod
+Version=@PROJECT_VERSION@
+Library=sekka
+Type=SharedLibrary
+OnDemand=True
+Configurable=True
+
+[Addon/Dependencies]
+0=core
+
+[Addon/OptionalDependencies]
+0=notifications

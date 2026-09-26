@@ -1,0 +1,6 @@
+[InputMethod]
+Name=Sekka
+Label=石
+LangCode=ja
+Addon=sekka
+Configurable=True

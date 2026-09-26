@@ -1,0 +1,17 @@
+# CMake build directories
+/build/
+/build-*/
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+
+# Generated dictionaries and fetched dictionary sources
+*.db
+SKK-JISYO.L
