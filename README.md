@@ -34,7 +34,7 @@ Ctrl-J は状態によって3つの意味を持つ。
 
 ## 依存
 
-- fcitx5 5.0 以降
+- fcitx5 5.1.12 以降（`FCITX_ADDON_FACTORY_V2` を使うため。Ubuntu 24.04 の 5.1.2 では足りない）
 - libsekka（pkg-config の `sekka`）
 - CMake 3.13 以降、C++20 コンパイラ
 - gettext

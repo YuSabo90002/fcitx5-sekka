@@ -8,9 +8,18 @@ on:
 
 jobs:
   build:
-    name: Build and test (Ubuntu)
-    runs-on: ubuntu-24.04
+    name: Build and test (Arch Linux)
+    # Arch is used rather than Ubuntu because this addon needs fcitx5 >= 5.1.12 for
+    # FCITX_ADDON_FACTORY_V2, and Ubuntu 24.04 ships 5.1.2. fcitx5-cskk keeps an Arch job
+    # for the same kind of reason.
+    runs-on: ubuntu-latest
+    container: archlinux:latest
     steps:
+      - name: Install dependencies
+        run: |
+          pacman -Syu --needed --noconfirm \
+            base-devel cmake extra-cmake-modules fcitx5 gtest gettext git rust cargo-c pkgconf
+
       - uses: actions/checkout@v4
 
       - name: Read the required libsekka version
@@ -24,29 +33,12 @@ jobs:
           ref: v${{ steps.sekka.outputs.version }}
           path: libsekka
 
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Install cargo-c
-        run: cargo install cargo-c --locked
-
       - name: Build and install libsekka
         working-directory: libsekka
         run: |
-          # cinstall as the normal user into a staging dir, then copy it in as root.
-          # `sudo cargo` does not work: sudo resolves the command before the PATH
-          # assignment applies, so it never finds the toolchain in ~/.cargo/bin.
-          cargo cinstall --release --prefix=/usr --libdir=lib/x86_64-linux-gnu \
-            --destdir="${RUNNER_TEMP}/libsekka-stage"
-          sudo cp -a "${RUNNER_TEMP}/libsekka-stage/usr/." /usr/
+          # Running as root inside the container, so this installs straight into /usr.
+          cargo cinstall --release --prefix=/usr --libdir=lib
           pkg-config --modversion sekka
-
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            cmake extra-cmake-modules gettext pkg-config \
-            libfcitx5core-dev libfcitx5utils-dev fcitx5-modules-dev \
-            libgtest-dev
 
       - name: Configure
         run: cmake -S . -B build -DENABLE_TEST=ON -DCMAKE_BUILD_TYPE=Release
