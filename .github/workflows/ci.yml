@@ -31,7 +31,14 @@ jobs:
 
       - name: Build and install libsekka
         working-directory: libsekka
-        run: sudo -E "PATH=${PATH}" cargo cinstall --release --prefix=/usr --libdir=lib/x86_64-linux-gnu
+        run: |
+          # cinstall as the normal user into a staging dir, then copy it in as root.
+          # `sudo cargo` does not work: sudo resolves the command before the PATH
+          # assignment applies, so it never finds the toolchain in ~/.cargo/bin.
+          cargo cinstall --release --prefix=/usr --libdir=lib/x86_64-linux-gnu \
+            --destdir="${RUNNER_TEMP}/libsekka-stage"
+          sudo cp -a "${RUNNER_TEMP}/libsekka-stage/usr/." /usr/
+          pkg-config --modversion sekka
 
       - name: Install build dependencies
         run: |
