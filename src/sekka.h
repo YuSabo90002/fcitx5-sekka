@@ -7,6 +7,7 @@
 #define SEKKA_H
 
 #include <string>
+#include <vector>
 
 // notifications_public.h - the optional dependency interface to the notifications
 // addon (D-105). The `INTERFACE_INCLUDE_DIRECTORIES` of
@@ -24,6 +25,7 @@
 #include <fcitx/instance.h>
 
 #include "sekkaconfig.h"
+#include "sekkadictpath.h"
 
 // Forward declarations of the libsekka C ABI
 //
@@ -177,7 +179,12 @@ private:
     /// Reopens the dictionaries and sets them again on every input context
     void reloadDictionaries();
 
-    /// Notifies the user of a dictionary load failure (D-105 / FR-009).
+    /// Notifies the user of a dictionary load failure (D-105 / FR-009). Single-notice
+    /// version. Its body is a thin delegation to `notifyDictionaryErrors()` with a
+    /// one-element batch (`{DictionaryErrorNotice{path, body}}`), so a single failure's
+    /// dedup key is identical to the batch version's one-notice key
+    /// (`dictionaryNoticeDedupKey`), and the user dictionary side (which never batches)
+    /// keeps behaving exactly as before this plan.
     ///
     /// - a failure to notify must never stop input: it throws nothing and ignores the
     ///   return value (the "a failure does not stop input" discipline of D-105 / D-35 /
@@ -193,6 +200,27 @@ private:
     ///   notification for the same failure is resent on every unrelated settings change).
     void notifyDictionaryError(std::string &dedupSlot, const std::string &path,
                                 const std::string &body);
+
+    /// Notifies the user of a batch of dictionary load problems from one
+    /// `openDictionaries()` call (D-105 / FR-009 / 06-02 D-127). Used by the master
+    /// dictionary domain, which can produce several notices in one call (one per skipped
+    /// candidate, plus the D-127 "not found in the search locations" summary).
+    ///
+    /// - an empty `notices` batch clears `dedupSlot` and sends nothing: that domain's load
+    ///   was clean this time, which is the same "success clears the slot" behavior as
+    ///   05-REVIEW CR-01's per-domain clearing
+    /// - the batch key (`dictionaryNoticeDedupKey(notices)`) is compared against
+    ///   `dedupSlot`; an identical key sends nothing, so repeated
+    ///   `reloadDictionaries()` calls with the same configuration do not pile up
+    ///   notifications for the candidates that keep being skipped (06-CONTEXT.md
+    ///   Claude's Discretion)
+    /// - `notifications()` being null (the addon disabled or unavailable) means nothing is
+    ///   sent and `dedupSlot` is left untouched, exactly like the single-notice version
+    /// - each notice in the batch is sent through the same
+    ///   `INotifications::sendNotification` call as before; only the body/path per notice
+    ///   differs, so no other part of the notification (icon, timeout, actions) changes
+    void notifyDictionaryErrors(std::string &dedupSlot,
+                                const std::vector<DictionaryErrorNotice> &notices);
 
     Instance *instance_;
     SekkaConfig config_;
@@ -212,12 +240,12 @@ private:
     /// `_notifications_`.
     FCITX_ADDON_DEPENDENCY_LOADER(notifications, instance_->addonManager());
 
-    /// The concatenated key of the (path, body) pair last notified about the master
-    /// dictionary. Used for deduplication (D-105). It is cleared when the master
-    /// dictionary load in openDictionaries() succeeds, so the same failure recurring after
-    /// an intervening success counts as a new failure. Success or failure on the user
-    /// dictionary side does not affect this field (05-REVIEW CR-01: independent suppression
-    /// state per domain).
+    /// The key of the batch of notices last sent about the master dictionary
+    /// (`dictionaryNoticeDedupKey`, 06-02). Used for deduplication (D-105). It is cleared
+    /// whenever a load in openDictionaries() produces an empty batch (nothing to notify -
+    /// everything was clean), so the same failure recurring after an intervening success
+    /// counts as a new failure. Success or failure on the user dictionary side does not
+    /// affect this field (05-REVIEW CR-01: independent suppression state per domain).
     std::string lastNotifiedMasterDictError_;
 
     /// The concatenated key of the (path, body) pair last notified about the user

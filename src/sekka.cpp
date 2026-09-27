@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <string>
 #include <unistd.h>
@@ -370,32 +371,42 @@ void SekkaEngine::reloadDictionaries() {
     });
 }
 
-// D-105 / FR-009: tells the user through the notifications addon that a dictionary failed
-// to load. Called from every failure branch of openDictionaries() (the refusal + the three
-// kinds of D-64 + default + a user dictionary load failure).
+// D-105 / FR-009: tells the user through the notifications addon that one or more
+// dictionaries failed to load. Called from openDictionaries() for the master dictionary
+// domain, which can produce several notices in one call - one per skipped candidate
+// (D-124/D-125), plus the D-127 "not found in the search locations" summary - since 06-02
+// replaced the old "one candidate = one notification" pipeline with
+// `buildMasterDictionaryNotices()`. `notifyDictionaryError()` (below) is the single-notice
+// version used by the user dictionary domain, implemented as a one-element-batch delegation
+// to this function so its dedup key stays byte-identical to v1.0's.
 //
 // - a failure to notify must never stop input: it throws nothing and ignores the return
 //   value (the notification id) (the "a failure does not stop input" discipline of D-105 /
 //   D-35 / D-102)
 // - the text never contains the user's input history: only the dictionary path and the kind
-//   of failure (the discipline of sekka.cpp:262-264 applies here too)
+//   of failure (the discipline of sekka.cpp:262-264 applies here too), enforced by
+//   `buildMasterDictionaryNotices()`'s narrow input type
 // - notifications is an optional dependency and notifications() can be null (when the
 //   notifications addon is disabled or failed to load). When it is null, nothing happens and
-//   only the existing FCITX_WARN remains
-// - deduplication is limited to "the same (path, body) pair as last time", so notifications
-//   do not pile up when reloadDictionaries() is called repeatedly with the same
-//   configuration. The caller passes the `dedupSlot` of its own domain, master dictionary or
-//   user dictionary. Once a load in that domain succeeds in openDictionaries() the
-//   corresponding `dedupSlot` is cleared, so the same failure recurring after an intervening
-//   success is notified as a new failure. Because each domain uses its own slot, a success in
-//   one domain never affects the suppression state of a failure in the other (05-REVIEW
-//   CR-01; with a single shared field, a success on one side would wipe the deduplication key
-//   of the other side's failure, which was a bug where the same failure was re-notified on
-//   every unrelated settings change).
-void SekkaEngine::notifyDictionaryError(std::string &dedupSlot,
-                                         const std::string &path,
-                                         const std::string &body) {
-    auto key = path + "\n" + body;
+//   only the existing FCITX_WARN remains, and `dedupSlot` is left untouched (matching v1.0)
+// - an empty `notices` batch means that domain's load was clean this time (05-REVIEW CR-01's
+//   "success clears the slot"), so `dedupSlot` is cleared and nothing is sent
+// - deduplication compares the WHOLE BATCH's key (`dictionaryNoticeDedupKey`) against
+//   `dedupSlot`, so notifications do not pile up when reloadDictionaries() is called
+//   repeatedly with the same configuration (06-CONTEXT.md Claude's Discretion), while a
+//   batch that changes in content, count, or order is always sent in full. The caller
+//   passes the `dedupSlot` of its own domain, master dictionary or user dictionary, so the
+//   suppression is independent per domain (05-REVIEW CR-01: with a single shared field, a
+//   success in one domain would wipe out the suppression state of a failure in the other,
+//   turning into a bug where the notification for the same failure is resent on every
+//   unrelated settings change)
+void SekkaEngine::notifyDictionaryErrors(std::string &dedupSlot,
+                                          const std::vector<DictionaryErrorNotice> &notices) {
+    if (notices.empty()) {
+        dedupSlot.clear();
+        return;
+    }
+    auto key = dictionaryNoticeDedupKey(notices);
     if (key == dedupSlot) {
         return;
     }
@@ -403,11 +414,22 @@ void SekkaEngine::notifyDictionaryError(std::string &dedupSlot,
     if (!n) {
         return;
     }
-    n->call<fcitx::INotifications::sendNotification>(
-        "sekka", 0, "dialog-error", _("Sekka: failed to load a dictionary"), body,
-        std::vector<std::string>{}, 5000, fcitx::NotificationActionCallback{},
-        fcitx::NotificationClosedCallback{});
+    for (const auto &notice : notices) {
+        n->call<fcitx::INotifications::sendNotification>(
+            "sekka", 0, "dialog-error", _("Sekka: failed to load a dictionary"),
+            notice.body, std::vector<std::string>{}, 5000,
+            fcitx::NotificationActionCallback{}, fcitx::NotificationClosedCallback{});
+    }
     dedupSlot = key;
+}
+
+// Single-notice version, used by the user dictionary domain (which never batches). Its
+// body is a delegation to `notifyDictionaryErrors()` with a one-element batch, so its dedup
+// key is `path + "\n" + body`, byte-identical to the pre-06-02 key computed here directly.
+void SekkaEngine::notifyDictionaryError(std::string &dedupSlot,
+                                         const std::string &path,
+                                         const std::string &body) {
+    notifyDictionaryErrors(dedupSlot, {DictionaryErrorNotice{path, body}});
 }
 
 void SekkaEngine::openDictionaries() {
@@ -441,76 +463,62 @@ void SekkaEngine::openDictionaries() {
     };
     auto walk = walkDictionaryCandidates(resolved.candidates, loader);
 
-    // D-64/SC6/CR-01: log and notify each non-adopted attempt with the exact v1.0 wording
-    // for its outcome (02.1-REVIEW CR-01's rejection text, and the three kinds of D-64 plus
-    // the default). `path.string()` is mandatory here: streaming a std::filesystem::path
-    // directly would wrap it in quotes and change the v1.0 wording.
+    // D-64/SC6/CR-01/D-127: log (all candidates, full search-location list) and notify
+    // (folded to `kMaxShownSearchLocations`) every non-adopted attempt with the exact v1.0
+    // wording for its outcome (02.1-REVIEW CR-01's rejection text, and the three kinds of
+    // D-64 plus the default), followed - only for a search that adopted nothing - by the
+    // 06-02 "not found in the search locations" summary. The per-candidate judgment now
+    // lives in `walkDictionaryCandidates` (06-01) and the message assembly in
+    // `buildMasterDictionaryNotices` (06-02); this function only supplies the two sets of
+    // text (translated for notifications, plain English for the log, matching v1.0
+    // wording) and sends the results.
     //
-    // This task does not add a "not found anywhere" summary notification for zero/all-skipped
-    // candidates (D-127 is 06-02's job); an explicit path still behaves exactly like v1.0
-    // since it has exactly one candidate.
-    for (const auto &attempt : walk.attempts) {
-        if (attempt.outcome == DictCandidateOutcome::Loaded) {
-            continue;
-        }
-        auto p = attempt.path.string();
-        switch (attempt.outcome) {
-        case DictCandidateOutcome::WritableRefused:
-            // 02.1-REVIEW CR-01: the master dictionary is mmapped, and rewriting the file
-            // while it is mapped takes the whole fcitx5 process down with SIGBUS (which
-            // catch_unwind cannot catch). That safety rests, per the comments, on the
-            // deployment being root-owned 644 under package management, but a candidate
-            // (explicit or found via search) can be an arbitrary path, so at the very
-            // least a path writable by the running user is refused here (writable by the
-            // real UID of the running process = that user could rewrite it while mapped
-            // and induce SIGBUS).
-            FCITX_WARN() << "refusing to load the master dictionary for safety because its "
-                            "path is writable (deploying it root-owned with mode 644 is "
-                            "recommended): "
-                         << p;
-            notifyDictionaryError(
-                lastNotifiedMasterDictError_, p,
-                _("refused to load the master dictionary for safety because its path is "
-                  "writable (deploying it root-owned with mode 644 is recommended): ") +
-                    p);
-            break;
-        case DictCandidateOutcome::NotFound:
-            FCITX_WARN() << "master dictionary not found: " << p;
-            notifyDictionaryError(lastNotifiedMasterDictError_, p,
-                                  _("master dictionary not found: ") + p);
-            break;
-        case DictCandidateOutcome::Unreadable:
-            FCITX_WARN()
-                << "cannot open the master dictionary (check the permissions): " << p;
-            notifyDictionaryError(
-                lastNotifiedMasterDictError_, p,
-                _("cannot open the master dictionary (check the permissions): ") + p);
-            break;
-        case DictCandidateOutcome::Corrupt:
-            FCITX_WARN()
-                << "the master dictionary is corrupt (invalid format or version): " << p;
-            notifyDictionaryError(
-                lastNotifiedMasterDictError_, p,
-                _("the master dictionary is corrupt (invalid format or version): ") + p);
-            break;
-        default:
-            // Other (and Loaded, already skipped above).
-            FCITX_WARN() << "failed to load the master dictionary: " << p;
-            notifyDictionaryError(lastNotifiedMasterDictError_, p,
-                                  _("failed to load the master dictionary: ") + p);
-            break;
-        }
+    // Notification text (translated via `_()`; `po/ja.po` carries the Japanese
+    // translations). `notFoundInSearchLocations` is new in 06-02 (D-127/PATH-06); the other
+    // four reuse v1.0's exact notification wording so existing translations keep applying.
+    MasterDictionaryNoticeTexts notifyTexts;
+    notifyTexts.writableRefused =
+        _("refused to load the master dictionary for safety because its path is writable "
+          "(deploying it root-owned with mode 644 is recommended): ");
+    notifyTexts.notFound = _("master dictionary not found: ");
+    notifyTexts.unreadable = _("cannot open the master dictionary (check the permissions): ");
+    notifyTexts.corrupt =
+        _("the master dictionary is corrupt (invalid format or version): ");
+    notifyTexts.other = _("failed to load the master dictionary: ");
+    notifyTexts.notFoundInSearchLocations =
+        _("master dictionary not found in the search locations: ");
+
+    // Log text: v1.0's plain English (never translated - matches the pre-06-02 FCITX_WARN
+    // wording exactly). `writableRefused` differs slightly from the notification wording
+    // ("refused" -> "refusing"), matching v1.0's log line precisely.
+    MasterDictionaryNoticeTexts logTexts;
+    logTexts.writableRefused =
+        "refusing to load the master dictionary for safety because its path is writable "
+        "(deploying it root-owned with mode 644 is recommended): ";
+    logTexts.notFound = "master dictionary not found: ";
+    logTexts.unreadable = "cannot open the master dictionary (check the permissions): ";
+    logTexts.corrupt = "the master dictionary is corrupt (invalid format or version): ";
+    logTexts.other = "failed to load the master dictionary: ";
+    logTexts.notFoundInSearchLocations =
+        "master dictionary not found in the search locations: ";
+
+    // Log every searched location in full (no folding) - only the notification is folded
+    // to `kMaxShownSearchLocations` (D-127/06-CONTEXT.md Claude's Discretion).
+    for (const auto &line :
+         buildMasterDictionaryNotices(resolved, walk, logTexts,
+                                       std::numeric_limits<std::size_t>::max())) {
+        FCITX_WARN() << line.body;
     }
     if (walk.adopted) {
         FCITX_INFO() << "loaded the master dictionary: " << walk.adopted->string();
-        // 05-REVIEW CR-01: on a successful load, clear only the deduplication state of the
-        // master dictionary domain itself. Without the clear, a (path, body) pair that
-        // failed previously and recurs after an intervening success would be silently
-        // suppressed by notifyDictionaryError() as the same key. The user dictionary
-        // side's slot is left untouched (the domains are independent, so a success on one
-        // side must not wipe the suppression state of the other side's failure).
-        lastNotifiedMasterDictError_.clear();
     }
+    // 06-02: send the whole batch for this openDictionaries() call in one shot.
+    // `notifyDictionaryErrors` clears `lastNotifiedMasterDictError_` itself when the batch
+    // is empty (i.e. the load was clean - equivalent to 05-REVIEW CR-01's "success clears
+    // the slot"), so there is no separate explicit clear here.
+    notifyDictionaryErrors(lastNotifiedMasterDictError_,
+                           buildMasterDictionaryNotices(resolved, walk, notifyTexts,
+                                                         kMaxShownSearchLocations));
 
     // Load the user dictionary.
     auto userDictPath = config_.userDictionaryPath.value();

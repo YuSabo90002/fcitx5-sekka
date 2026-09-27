@@ -45,6 +45,10 @@ msgid "master dictionary not found: "
 msgstr "マスター辞書が見つかりません: "
 
 #: src/sekka.cpp
+msgid "master dictionary not found in the search locations: "
+msgstr "マスター辞書が探索場所に見つかりません: "
+
+#: src/sekka.cpp
 msgid "cannot open the master dictionary (check the permissions): "
 msgstr "マスター辞書を開けません（権限を確認してください）: "
 
