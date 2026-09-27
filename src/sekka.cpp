@@ -7,11 +7,13 @@
 
 #include "focuspolicy.h"
 #include "sekkacandidatelist.h"
+#include "sekkadictpath.h"
 
 #include <fcitx-config/iniparser.h>
 #include <fcitx-utils/i18n.h>
 #include <fcitx-utils/key.h>
 #include <fcitx-utils/log.h>
+#include <fcitx-utils/standardpaths.h>
 #include <fcitx-utils/utf8.h>
 #include <fcitx/inputcontext.h>
 #include <fcitx/inputpanel.h>
@@ -410,84 +412,104 @@ void SekkaEngine::notifyDictionaryError(std::string &dedupSlot,
 
 void SekkaEngine::openDictionaries() {
     // Load the master dictionary.
-    auto dictPath = config_.dictionaryPath.value();
-    if (!dictPath.empty() && ::access(dictPath.c_str(), W_OK) == 0) {
-        // 02.1-REVIEW CR-01: the master dictionary is mmapped, and rewriting the file while
-        // it is mapped takes the whole fcitx5 process down with SIGBUS (which catch_unwind
-        // cannot catch). That safety rests, per the comments, on the deployment being
-        // root-owned 644 under package management, but `dictionaryPath` can be changed to an
-        // arbitrary path from the settings UI by an unprivileged user, so at the very least a
-        // path writable by the running user is refused here (writable by the real UID of the
-        // running process = that user could rewrite it while mapped and induce SIGBUS).
-        FCITX_WARN() << "refusing to load the master dictionary for safety because its "
-                        "path is writable (deploying it root-owned with mode 644 is "
-                        "recommended): "
-                     << dictPath;
-        // notifyDictionaryError() must be called before dictPath.clear() (after the clear
-        // the path would be empty and could not go into the notification text).
-        // dictPath.clear() itself is not changed here - D-105 explicitly says the behaviour
-        // that a refused dictionary is not loaded stays exactly as it is (02.1-REVIEW CR-01,
-        // avoiding SIGBUS from a rewrite while mapped).
-        notifyDictionaryError(
-            lastNotifiedMasterDictError_, dictPath,
-            _("refused to load the master dictionary for safety because its path is "
-              "writable (deploying it root-owned with mode 644 is recommended): ") +
-                dictPath);
-        dictPath.clear();
-    }
-    if (!dictPath.empty()) {
+    //
+    // D-124/PATH-01/PATH-02: resolves either the single explicit `DictionaryPath` (D-126 /
+    // PATH-04, no StandardPaths lookup at all) or the full ordered candidate list from
+    // `fcitx::StandardPaths::global()`'s PkgData search (user directory -> each
+    // XDG_DATA_DIRS prefix -> fcitx5's own built-in pkgdatadir). Passing the global
+    // singleton in production and a local instance in tests is the seam
+    // `resolveMasterDictionaryCandidates` takes a `StandardPathsProvider` for
+    // (06-RESEARCH.md Pitfall 5: the global singleton reads environment variables only once
+    // per process).
+    auto resolved = resolveMasterDictionaryCandidates(config_.dictionaryPath.value(),
+                                                       &StandardPaths::global);
+
+    // The loader captures `this` so a successful load lands directly in `masterDict_`. A
+    // failed `sekka_file_dict_new_with_error` call always returns null, so overwriting
+    // `masterDict_` on every attempt never leaks a handle from an earlier failed attempt;
+    // the walk stops at the first `Loaded` outcome (D-125), so the final value is either
+    // the one adopted dictionary or null.
+    auto loader = [this](const std::filesystem::path &path) {
         int dictError = SEKKA_DICT_OK;
-        masterDict_ = sekka_file_dict_new_with_error(dictPath.c_str(), "UTF-8",
-                                                      &dictError);
-        if (!masterDict_) {
-            // D-64/SC6: log the three kinds of dictionary load failure distinctly.
-            // D-105/FR-009: deliver the same text to the user through the notifications
-            // addon (added by the planner; a user dictionary load failure is treated as the
-            // same problem alongside the "refusal + three kinds" D-105 enumerates. This is
-            // an addition within the same intent, not a narrowing of scope).
-            switch (dictError) {
-            case SEKKA_DICT_ERROR_NOT_FOUND:
-                FCITX_WARN() << "master dictionary not found: " << dictPath;
-                notifyDictionaryError(lastNotifiedMasterDictError_, dictPath,
-                                      _("master dictionary not found: ") +
-                                          dictPath);
-                break;
-            case SEKKA_DICT_ERROR_UNREADABLE:
-                FCITX_WARN()
-                    << "cannot open the master dictionary (check the permissions): "
-                    << dictPath;
-                notifyDictionaryError(
-                    lastNotifiedMasterDictError_, dictPath,
-                    _("cannot open the master dictionary (check the permissions): ") +
-                        dictPath);
-                break;
-            case SEKKA_DICT_ERROR_CORRUPT:
-                FCITX_WARN()
-                    << "the master dictionary is corrupt (invalid format or version): "
-                    << dictPath;
-                notifyDictionaryError(
-                    lastNotifiedMasterDictError_, dictPath,
-                    _("the master dictionary is corrupt (invalid format or version): ") +
-                        dictPath);
-                break;
-            default:
-                FCITX_WARN() << "failed to load the master dictionary: "
-                             << dictPath;
-                notifyDictionaryError(lastNotifiedMasterDictError_, dictPath,
-                                      _("failed to load the master dictionary: ") +
-                                          dictPath);
-                break;
-            }
-        } else {
-            // 05-REVIEW CR-01: on a successful load, clear only the deduplication state of
-            // the master dictionary domain itself. Without the clear, a (path, body) pair
-            // that failed previously and recurs after an intervening success would be
-            // silently suppressed by notifyDictionaryError() as the same key. The user
-            // dictionary side's slot is left untouched (the domains are independent, so a
-            // success on one side must not wipe the suppression state of the other side's
-            // failure).
-            lastNotifiedMasterDictError_.clear();
+        masterDict_ =
+            sekka_file_dict_new_with_error(path.c_str(), "UTF-8", &dictError);
+        if (masterDict_) {
+            return static_cast<int>(SEKKA_DICT_OK);
         }
+        return dictError != SEKKA_DICT_OK ? dictError
+                                          : static_cast<int>(SEKKA_DICT_ERROR_OTHER);
+    };
+    auto walk = walkDictionaryCandidates(resolved.candidates, loader);
+
+    // D-64/SC6/CR-01: log and notify each non-adopted attempt with the exact v1.0 wording
+    // for its outcome (02.1-REVIEW CR-01's rejection text, and the three kinds of D-64 plus
+    // the default). `path.string()` is mandatory here: streaming a std::filesystem::path
+    // directly would wrap it in quotes and change the v1.0 wording.
+    //
+    // This task does not add a "not found anywhere" summary notification for zero/all-skipped
+    // candidates (D-127 is 06-02's job); an explicit path still behaves exactly like v1.0
+    // since it has exactly one candidate.
+    for (const auto &attempt : walk.attempts) {
+        if (attempt.outcome == DictCandidateOutcome::Loaded) {
+            continue;
+        }
+        auto p = attempt.path.string();
+        switch (attempt.outcome) {
+        case DictCandidateOutcome::WritableRefused:
+            // 02.1-REVIEW CR-01: the master dictionary is mmapped, and rewriting the file
+            // while it is mapped takes the whole fcitx5 process down with SIGBUS (which
+            // catch_unwind cannot catch). That safety rests, per the comments, on the
+            // deployment being root-owned 644 under package management, but a candidate
+            // (explicit or found via search) can be an arbitrary path, so at the very
+            // least a path writable by the running user is refused here (writable by the
+            // real UID of the running process = that user could rewrite it while mapped
+            // and induce SIGBUS).
+            FCITX_WARN() << "refusing to load the master dictionary for safety because its "
+                            "path is writable (deploying it root-owned with mode 644 is "
+                            "recommended): "
+                         << p;
+            notifyDictionaryError(
+                lastNotifiedMasterDictError_, p,
+                _("refused to load the master dictionary for safety because its path is "
+                  "writable (deploying it root-owned with mode 644 is recommended): ") +
+                    p);
+            break;
+        case DictCandidateOutcome::NotFound:
+            FCITX_WARN() << "master dictionary not found: " << p;
+            notifyDictionaryError(lastNotifiedMasterDictError_, p,
+                                  _("master dictionary not found: ") + p);
+            break;
+        case DictCandidateOutcome::Unreadable:
+            FCITX_WARN()
+                << "cannot open the master dictionary (check the permissions): " << p;
+            notifyDictionaryError(
+                lastNotifiedMasterDictError_, p,
+                _("cannot open the master dictionary (check the permissions): ") + p);
+            break;
+        case DictCandidateOutcome::Corrupt:
+            FCITX_WARN()
+                << "the master dictionary is corrupt (invalid format or version): " << p;
+            notifyDictionaryError(
+                lastNotifiedMasterDictError_, p,
+                _("the master dictionary is corrupt (invalid format or version): ") + p);
+            break;
+        default:
+            // Other (and Loaded, already skipped above).
+            FCITX_WARN() << "failed to load the master dictionary: " << p;
+            notifyDictionaryError(lastNotifiedMasterDictError_, p,
+                                  _("failed to load the master dictionary: ") + p);
+            break;
+        }
+    }
+    if (walk.adopted) {
+        FCITX_INFO() << "loaded the master dictionary: " << walk.adopted->string();
+        // 05-REVIEW CR-01: on a successful load, clear only the deduplication state of the
+        // master dictionary domain itself. Without the clear, a (path, body) pair that
+        // failed previously and recurs after an intervening success would be silently
+        // suppressed by notifyDictionaryError() as the same key. The user dictionary
+        // side's slot is left untouched (the domains are independent, so a success on one
+        // side must not wipe the suppression state of the other side's failure).
+        lastNotifiedMasterDictError_.clear();
     }
 
     // Load the user dictionary.
