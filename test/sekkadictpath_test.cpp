@@ -808,16 +808,31 @@ TEST(SekkaUserDictPathTest, FollowsXdgDataHome) {
     std::filesystem::remove_all(root);
 }
 
-// A relative `XDG_DATA_HOME` must never place learned data under fcitx5's current working
-// directory - `defaultUserDictionaryPath` rejects it and returns empty (no user dictionary).
+// A relative fcitx5 user data directory must never place learned data under fcitx5's
+// current working directory - `defaultUserDictionaryPath` rejects it and returns empty (no
+// user dictionary).
+//
+// NOTE on the env var actually used here: a *relative* `XDG_DATA_HOME` does NOT reproduce
+// this in real fcitx5 5.1.16 - verified empirically (see SUMMARY.md for the probe). This
+// package's `StandardPathsPrivate::defaultPaths()` re-anchors a relative XDG_DATA_HOME
+// against the real `HOME` env var before it ever reaches `userDirectory(PkgData)` (its
+// homeFallback for the FCITX_DATA_HOME layer is `dataDirs_[0] / "fcitx5"`, and when that
+// fallback itself is not absolute, the private implementation prepends `HOME` to it - so
+// the result stays absolute either way). Setting `FCITX_DATA_HOME` itself to a relative
+// value is what actually reaches `userDirectory(PkgData)` unresolved, since fcitx5 uses that
+// value exactly as given when the env var is present (06-RESEARCH.md `## Open Questions` 2:
+// "`XDG_DATA_HOME` が空でなければ相対パスでもそのまま使われる" - the same "used as-is" rule
+// applies to `FCITX_DATA_HOME`, the higher-priority override for this package). The test
+// name matches this task's `<verify>` gate; the env var it manipulates is the one that
+// genuinely reproduces a relative `userDirectory(PkgData)` result.
 TEST(SekkaUserDictPathTest, RelativeXdgDataHomeYieldsEmpty) {
     auto root = testRoot("user_dict_relative_xdg_data_home");
     auto homeDir = root / "home";
     std::filesystem::create_directories(homeDir);
 
     ScopedEnvVar home("HOME", homeDir.string());
-    ScopedEnvVar xdgDataHome("XDG_DATA_HOME", std::string("relative/data"));
-    ScopedEnvVar fcitxDataHome("FCITX_DATA_HOME", std::nullopt);
+    ScopedEnvVar xdgDataHome("XDG_DATA_HOME", std::nullopt);
+    ScopedEnvVar fcitxDataHome("FCITX_DATA_HOME", std::string("relative/data"));
 
     fcitx::StandardPaths paths(
         "fcitx5", std::unordered_map<std::string, std::vector<std::filesystem::path>>{},

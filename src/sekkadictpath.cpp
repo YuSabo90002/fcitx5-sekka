@@ -140,11 +140,33 @@ std::string dictionaryNoticeDedupKey(const std::vector<DictionaryErrorNotice> &n
     return key;
 }
 
-// RED-phase stub (06-04 Task 1): intentionally always returns an empty path so the new
-// SekkaUserDictPathTest cases compile and fail on their real assertions rather than a build
-// error. Replaced with the real implementation in the GREEN commit.
-std::filesystem::path defaultUserDictionaryPath(const StandardPathsProvider & /*paths*/) {
-    return {};
+std::filesystem::path defaultUserDictionaryPath(const StandardPathsProvider &paths) {
+    std::filesystem::path dir;
+    try {
+        dir = paths().userDirectory(StandardPathsType::PkgData);
+    } catch (const std::exception &e) {
+        // D-35: constructing/querying `paths()` throws when neither `HOME` nor any
+        // `XDG_*_HOME`/`FCITX_*_HOME` variable is set (`std::runtime_error("Home is not
+        // set")`), or a synthetic exception from a test provider. Never let it escape the
+        // addon boundary - fall back to "no user dictionary", matching v1.0's behavior when
+        // `HOME` is unset.
+        FCITX_WARN()
+            << "cannot resolve the fcitx5 user data directory, so no user dictionary is used: "
+            << e.what();
+        return {};
+    }
+    if (dir.empty() || !dir.is_absolute()) {
+        // D-35: an empty directory means there is no relevant user directory at all; a
+        // non-absolute one would place learned data under fcitx5's current working
+        // directory, which a relative `XDG_DATA_HOME` must never do. Either way, no user
+        // dictionary is used.
+        FCITX_WARN()
+            << "the fcitx5 user data directory is not an absolute path, so no user "
+               "dictionary is used: "
+            << dir.string();
+        return {};
+    }
+    return dir / kUserDictionaryRelativePath;
 }
 
 std::vector<DictionaryErrorNotice>
