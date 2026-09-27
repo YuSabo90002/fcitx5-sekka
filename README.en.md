@@ -37,7 +37,7 @@ the application.
 
 ## Dependencies
 
-- fcitx5 5.1.12 or later (for `FCITX_ADDON_FACTORY_V2`; the 5.1.2 of Ubuntu 24.04 is too old)
+- fcitx5 5.1.13 or later (the dictionaries are located through the new `StandardPaths` API; `FCITX_ADDON_FACTORY_V2` also needs 5.1.12. The 5.1.2 of Ubuntu 24.04 is too old)
 - libsekka (the `sekka` pkg-config module)
 - CMake 3.13 or later and a C++20 compiler
 - gettext

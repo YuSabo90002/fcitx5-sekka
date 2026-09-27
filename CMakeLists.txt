@@ -5,12 +5,16 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# fcitx5 5.1.12 or later is required: src/sekka.cpp registers the addon with
-# FCITX_ADDON_FACTORY_V2, and that macro was added to fcitx/addoninstance.h in 5.1.12.
-# Declaring 5.0.0 here only moved the failure from configure time to a confusing
-# "expected constructor, destructor, or type conversion" compile error (measured on
-# Ubuntu 24.04, which ships 5.1.2).
-find_package(Fcitx5Core 5.1.12 REQUIRED)
+# fcitx5 5.1.13 or later is required: src/sekkadictpath.cpp locates the master
+# dictionary through fcitx::StandardPaths (fcitx-utils/standardpaths.h), which was added in
+# 5.1.13 (BUILD-01/BUILD-02). FCITX_ADDON_FACTORY_V2 (added in 5.1.12, and still used by
+# src/sekka.cpp to register the addon) is subsumed by this higher floor. Declaring a lower
+# version here only moves the failure from configure time to a confusing compile error
+# further down the line (5.1.12 was picked for the same reason, measured on Ubuntu 24.04,
+# which ships 5.1.2 - too old for either requirement). The version check itself is left to
+# Fcitx5CoreConfigVersion.cmake's own compatibility judgment; no hand-rolled
+# if(VERSION_LESS) is added (06-RESEARCH.md Don't Hand-Roll).
+find_package(Fcitx5Core 5.1.13 REQUIRED)
 # Optional dependency on the notifications addon (D-105/FR-009). This package defines an
 # INTERFACE library called Fcitx5::Module::Notifications that provides only the include
 # directory of the notifications public headers (there is no library to link against,
