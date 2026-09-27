@@ -48,4 +48,9 @@ jobs:
 
       - name: Test
         working-directory: build
-        run: ctest --output-on-failure
+        # The container runs as root, and for root access(W_OK) always succeeds, so CR-01 would
+        # refuse even the read-only (0444) test dictionaries. Run the tests as a regular user.
+        run: |
+          useradd -m tester
+          chown -R tester: .
+          runuser -u tester -- env HOME=/home/tester ctest --output-on-failure
