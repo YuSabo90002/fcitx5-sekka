@@ -80,17 +80,47 @@ The output has to be mode 0444. The master dictionary is mmapped, so the addon r
 load it from a path writable by the running user (to avoid SIGBUS from a rewrite while
 mapped).
 
+## Dictionary search
+
+When the "Dictionary path" setting is empty (the default), Sekka looks for
+`sekka/master-dict.db` in the fcitx5 data directories in the following order and uses the
+first one it can load.
+
+1. `$XDG_DATA_HOME/fcitx5/` (`~/.local/share/fcitx5/` when `XDG_DATA_HOME` is not set)
+2. `fcitx5/` under each directory listed in `$XDG_DATA_DIRS`, in order
+3. fcitx5's own installed data directory (for example `/usr/share/fcitx5/`)
+
+- To use your own dictionary, place it at `$XDG_DATA_HOME/fcitx5/sekka/master-dict.db`; it
+  takes priority over the system one.
+- The dictionary file must not be writable by the running user (mode 0444, as
+  `sekka-dict-tool` produces it). A candidate that is writable, corrupt or unreadable is
+  reported in a notification and skipped, and the next candidate is tried (see "The master
+  dictionary" for why a writable dictionary is refused).
+- When no dictionary is found anywhere, a notification lists the searched locations (the
+  first three and the number of the rest). Input keeps working without a dictionary; text is
+  committed as hiragana.
+- A path entered in "Dictionary path" is used as it is, without searching. If that path
+  cannot be loaded, Sekka does not fall back to a dictionary the search would find (so that a
+  typo does not go unnoticed).
+- If the v1.0 default `/usr/share/fcitx5/sekka/master-dict.db` is still in the configuration,
+  it is treated the same as empty and the search is used. The configuration file is not
+  rewritten.
+- On systems without `/usr/share`, such as NixOS, no configuration is needed as long as the
+  `share` directory of the prefix where fcitx5-sekka is installed is listed in
+  `XDG_DATA_DIRS`.
+
 ## Configuration
 
 Editable from fcitx5's configuration tool (`fcitx5-configtool`).
 
 | Item | Default |
 |---|---|
-| Dictionary path | `/usr/share/fcitx5/sekka/master-dict.db` |
-| User dictionary path | empty (`$HOME/.local/share/sekka/user-dict.db`) |
+| Dictionary path | empty (searched automatically; see "Dictionary search") |
+| User dictionary path | empty (`$XDG_DATA_HOME/fcitx5/sekka/user-dict.db`, or `~/.local/share/fcitx5/sekka/user-dict.db` when `XDG_DATA_HOME` is not set) |
 | Conversion key | `Control+j` |
 
-A change to the dictionary path takes effect without restarting fcitx5.
+A change to the dictionary path takes effect without restarting fcitx5. Clearing it switches
+back to the search.
 
 ## License
 

@@ -76,17 +76,41 @@ cmake --build build
 書き込み可能なパスに置かれているとアドオンがロードを拒否する（mmap 中の書き換えによる
 SIGBUS を避けるため）。
 
+## 辞書の探索
+
+設定の「辞書パス」が空のとき（既定）、Sekka は `sekka/master-dict.db` を fcitx5 のデータ
+ディレクトリから次の順に探し、最初に読み込めた1つを使う。
+
+1. `$XDG_DATA_HOME/fcitx5/`（未設定なら `~/.local/share/fcitx5/`）
+2. `$XDG_DATA_DIRS` に並ぶ各ディレクトリの `fcitx5/`（先頭から順に）
+3. fcitx5 自身のインストール先のデータディレクトリ（例: `/usr/share/fcitx5/`）
+
+- 自分で用意した辞書を使うときは `$XDG_DATA_HOME/fcitx5/sekka/master-dict.db` に置く。
+  システムの辞書より優先される。
+- 辞書ファイルは実行ユーザーから書き込めない状態（`sekka-dict-tool` の出力どおり 0444）で
+  置く。書き込み可能・壊れている・読めない辞書は、理由を通知したうえで飛ばし、次の候補を
+  試す（書き込み可能な辞書を拒否する理由は「マスター辞書」の節の mmap と SIGBUS の説明を
+  参照）。
+- どこにも見つからないときは、探した場所を並べた通知が出る（多いときは先頭3件と残りの
+  件数）。辞書が無くても入力は止まらず、ひらがなのまま確定できる。
+- 「辞書パス」にパスを書くと、探索せずにそのパスだけを使う。そのパスが読めなくても、
+  探索で見つかる別の辞書へはフォールバックしない（打ち間違いに気づけるようにするため）。
+- v1.0 の既定値 `/usr/share/fcitx5/sekka/master-dict.db` が設定に残っている場合は、
+  空と同じに扱って探索する。設定ファイルは書き換えない。
+- NixOS など `/usr/share` を持たない環境でも、fcitx5-sekka を入れた prefix の `share` が
+  `XDG_DATA_DIRS` に載っていれば設定は要らない。
+
 ## 設定
 
 fcitx5 の設定ツール（`fcitx5-configtool`）から変更できる。
 
 | 項目 | 既定値 |
 |---|---|
-| 辞書パス | `/usr/share/fcitx5/sekka/master-dict.db` |
-| ユーザー辞書パス | 空（`$HOME/.local/share/sekka/user-dict.db`） |
+| 辞書パス | 空（自動で探す。「辞書の探索」を参照） |
+| ユーザー辞書パス | 空（`$XDG_DATA_HOME/fcitx5/sekka/user-dict.db`、未設定なら `~/.local/share/fcitx5/sekka/user-dict.db`） |
 | 変換キー | `Control+j` |
 
-辞書パスの変更は fcitx5 を再起動せずに反映される。
+辞書パスの変更は fcitx5 を再起動せずに反映される。空に戻すと探索に切り替わる。
 
 ## ライセンス
 
