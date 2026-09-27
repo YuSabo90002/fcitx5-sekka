@@ -19,12 +19,12 @@
 #include <fcitx/inputpanel.h>
 #include <fcitx/userinterfacemanager.h>
 
-#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <limits>
 #include <memory>
 #include <string>
+#include <system_error>
 #include <unistd.h>
 #include <vector>
 
@@ -546,20 +546,36 @@ void SekkaEngine::openDictionaries() {
                                                          kMaxShownSearchLocations));
 
     // Load the user dictionary.
+    //
+    // USER-01/USER-02: when UserDictionaryPath is empty, the default is resolved entirely
+    // through fcitx::StandardPaths (userDirectory(PkgData) / "sekka/user-dict.db"), which
+    // follows XDG_DATA_HOME when it is set (USER-01) and is byte-identical to v1.0's
+    // hand-built $HOME/.local/share/fcitx5/sekka/user-dict.db when it is not, so existing
+    // learned data keeps loading (USER-02). An empty result (no HOME, no relevant user
+    // directory, or a relative one - D-35) means no user dictionary, exactly like v1.0
+    // without HOME: this block falls through with userDict_ left null and no notification
+    // (v1.0 did not notify for this case either). Explicit (non-empty) values are read as-is
+    // and never touch StandardPaths at all (USER-03). Migrating learned data from an old
+    // default path is out of scope (REQUIREMENTS.md Out of Scope) - nothing here moves,
+    // copies, or deletes a pre-existing user dictionary file.
     auto userDictPath = config_.userDictionaryPath.value();
     if (userDictPath.empty()) {
-        // Build the default path.
-        auto *home = std::getenv("HOME");
-        if (home) {
-            userDictPath = std::string(home) +
-                           "/.local/share/fcitx5/sekka/user-dict.db";
-        }
+        userDictPath = defaultUserDictionaryPath(&StandardPaths::global).string();
     }
     if (!userDictPath.empty()) {
-        // Create the directory when it does not exist.
+        // Create the directory when it does not exist. Uses the non-throwing overload
+        // (D-35): a read-only XDG_DATA_HOME (or any other permission failure) must not let a
+        // std::filesystem::filesystem_error escape the addon during initialization. On
+        // failure, log and continue - the following sekka_user_dict_new() call fails on its
+        // own and lands on the existing user-dictionary failure notification path below.
         auto parentDir = std::filesystem::path(userDictPath).parent_path();
         if (!parentDir.empty()) {
-            std::filesystem::create_directories(parentDir);
+            std::error_code ec;
+            std::filesystem::create_directories(parentDir, ec);
+            if (ec) {
+                FCITX_WARN() << "failed to create the user dictionary directory: "
+                             << parentDir.string() << " (" << ec.message() << ")";
+            }
         }
         userDict_ = sekka_user_dict_new(userDictPath.c_str(), "UTF-8");
         if (!userDict_) {
