@@ -18,7 +18,9 @@
 #include <fstream>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
+#include <system_error>
 #include <unordered_map>
 #include <vector>
 
@@ -521,6 +523,59 @@ TEST(SekkaDictPathTest, ProviderExceptionYieldsNoCandidates) {
     EXPECT_TRUE(resolved.isSearch);
     EXPECT_TRUE(resolved.candidates.empty());
     EXPECT_TRUE(resolved.searched.empty());
+}
+
+// G-06-1 / 06-REVIEW CR-01 regression test: after `locateAll()` has already found a
+// candidate, a failure while enumerating the search locations (`directories()`) must not
+// discard that candidate - only `searched` (display-only information for the D-127 summary
+// notice) should come back empty.
+//
+// A real `fcitx::StandardPaths` cannot be made to throw from `directories()`: fcitx5 5.1.16's
+// implementation returns a span over an already-populated vector with no I/O at all, so no
+// amount of permission/symlink mangling on the temporary directory reaches it. This test
+// instead injects the failure on the provider's SECOND call - the point at which the
+// enumeration query re-invokes `paths()` to list the search locations, after the first
+// (locate) query already succeeded. `providerCalls == 2` is an explicit check that the
+// injected failure actually reached the enumeration query rather than being skipped; if a
+// future change goes back to fetching `paths()` only once, this test would otherwise stop
+// meaning what it says without visibly failing.
+TEST(SekkaDictPathTest, SearchLocationListingFailureKeepsLocatedCandidates) {
+    SearchFixture fixture("search_location_listing_failure", /*numDataDirs=*/1);
+    writeDummyDictionary(fixture.dataDirDictPaths[0], 0444);
+
+    int providerCalls = 0;
+    fcitx::StandardPathsProvider provider = [&]() -> const fcitx::StandardPaths & {
+        ++providerCalls;
+        if (providerCalls == 1) {
+            return *fixture.paths;
+        }
+        throw std::filesystem::filesystem_error(
+            "cannot list the search locations",
+            std::make_error_code(std::errc::permission_denied));
+    };
+
+    auto resolved = fcitx::resolveMasterDictionaryCandidates("", provider);
+
+    // Asserted first so a regression's failure reason shows up as "candidates lost", which is
+    // the CR-01 mechanism itself, rather than a later unrelated assertion.
+    ASSERT_EQ(resolved.candidates.size(), 1u);
+    EXPECT_TRUE(resolved.isSearch);
+    EXPECT_EQ(resolved.candidates[0].lexically_normal(),
+              fixture.dataDirDictPaths[0].lexically_normal());
+    EXPECT_TRUE(resolved.searched.empty());
+    EXPECT_EQ(providerCalls, 2);
+
+    auto walk = fcitx::walkDictionaryCandidates(
+        resolved.candidates,
+        [](const std::filesystem::path &) { return static_cast<int>(SEKKA_DICT_OK); });
+    ASSERT_TRUE(walk.adopted.has_value());
+    EXPECT_EQ(walk.adopted->lexically_normal(),
+              fixture.dataDirDictPaths[0].lexically_normal());
+
+    fcitx::MasterDictionaryNoticeTexts texts;
+    auto notices = fcitx::buildMasterDictionaryNotices(
+        resolved, walk, texts, fcitx::kMaxShownSearchLocations);
+    EXPECT_TRUE(notices.empty());
 }
 
 // Confirms every `SekkaDictError` value (including unrecognized ones) maps to the expected
