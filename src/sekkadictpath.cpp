@@ -10,6 +10,7 @@
 #include <fcitx-utils/log.h>
 #include <fcitx-utils/standardpaths.h>
 
+#include <algorithm>
 #include <exception>
 #include <unistd.h>
 
@@ -99,25 +100,83 @@ walkDictionaryCandidates(const std::vector<std::filesystem::path> &candidates,
     return result;
 }
 
-// RED-phase stub (06-02 Task 2): always returns an empty string, deliberately wrong so the
-// new SekkaDictPathTest cases fail on real assertions before the real implementation lands.
-std::string summarizeSearchLocations(const std::vector<std::filesystem::path> & /*searched*/,
-                                      std::size_t /*maxShown*/) {
-    return "";
+// D-127/PATH-06/Claude's Discretion: an empty `searched` (an explicit path never populates
+// it) summarizes as the relative dictionary name itself, so the summary is always
+// meaningful. `maxShown == 0` is treated as 1: there is always at least one location worth
+// naming (the user-side directory is always first per `resolveMasterDictionaryCandidates`).
+std::string summarizeSearchLocations(const std::vector<std::filesystem::path> &searched,
+                                      std::size_t maxShown) {
+    if (searched.empty()) {
+        return std::string(kMasterDictionaryRelativePath);
+    }
+    if (maxShown == 0) {
+        maxShown = 1;
+    }
+    std::size_t shown = std::min(searched.size(), maxShown);
+    std::string summary;
+    for (std::size_t i = 0; i < shown; ++i) {
+        if (i > 0) {
+            summary += ", ";
+        }
+        summary += searched[i].string();
+    }
+    if (searched.size() > maxShown) {
+        summary += ", ... (+" + std::to_string(searched.size() - maxShown) + ")";
+    }
+    return summary;
 }
 
-// RED-phase stub (06-02 Task 2): always returns an empty string.
-std::string dictionaryNoticeDedupKey(const std::vector<DictionaryErrorNotice> & /*notices*/) {
-    return "";
+// One notice: path + "\n" + body (byte-identical to v1.0's `notifyDictionaryError()` key,
+// so a single explicit-path failure's suppression is unchanged by this plan). Several
+// notices are joined with "\n\n" so the key reflects content, count, AND order.
+std::string dictionaryNoticeDedupKey(const std::vector<DictionaryErrorNotice> &notices) {
+    std::string key;
+    for (const auto &notice : notices) {
+        if (!key.empty()) {
+            key += "\n\n";
+        }
+        key += notice.path + "\n" + notice.body;
+    }
+    return key;
 }
 
-// RED-phase stub (06-02 Task 2): always returns an empty list.
 std::vector<DictionaryErrorNotice>
-buildMasterDictionaryNotices(const MasterDictionaryCandidates & /*resolved*/,
-                              const DictCandidateWalkResult & /*walk*/,
-                              const MasterDictionaryNoticeTexts & /*texts*/,
-                              std::size_t /*maxShownLocations*/) {
-    return {};
+buildMasterDictionaryNotices(const MasterDictionaryCandidates &resolved,
+                              const DictCandidateWalkResult &walk,
+                              const MasterDictionaryNoticeTexts &texts,
+                              std::size_t maxShownLocations) {
+    std::vector<DictionaryErrorNotice> notices;
+    for (const auto &attempt : walk.attempts) {
+        if (attempt.outcome == DictCandidateOutcome::Loaded) {
+            continue;
+        }
+        auto p = attempt.path.string();
+        switch (attempt.outcome) {
+        case DictCandidateOutcome::WritableRefused:
+            notices.push_back({p, texts.writableRefused + p});
+            break;
+        case DictCandidateOutcome::NotFound:
+            notices.push_back({p, texts.notFound + p});
+            break;
+        case DictCandidateOutcome::Unreadable:
+            notices.push_back({p, texts.unreadable + p});
+            break;
+        case DictCandidateOutcome::Corrupt:
+            notices.push_back({p, texts.corrupt + p});
+            break;
+        default:
+            // Other (and Loaded, already skipped above).
+            notices.push_back({p, texts.other + p});
+            break;
+        }
+    }
+    // D-127/PATH-06: only a search (never an explicit path, D-126) that adopted nothing
+    // gets the trailing "not found in the search locations" summary notice.
+    if (resolved.isSearch && !walk.adopted) {
+        auto summary = summarizeSearchLocations(resolved.searched, maxShownLocations);
+        notices.push_back({summary, texts.notFoundInSearchLocations + summary});
+    }
+    return notices;
 }
 
 } // namespace fcitx
