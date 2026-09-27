@@ -143,11 +143,21 @@ void SekkaState::keyEvent(KeyEvent &event) {
         event.filterAndAccept();
         checkAndCommit();
         updatePreedit();
-        // For a non-character key that committed the romaji as it is, and for an "other
-        // key" during reselection, the same key is forwarded to the application after the
-        // committed output and the preedit update (D-03/D-09; RESEARCH Pattern 2: fcitx5
-        // guarantees that the committed string reaches the client before the forwarded
-        // key).
+        // D-158 (Phase 9) already turns printable keys (0x20-0x7E, no Ctrl/Alt/Super) into
+        // input libsekka consumes and appends to the committed text, so those never reach
+        // this point any more. What is forwarded here is only: a non-printable key that
+        // committed the romaji or the on-screen candidate as it is (D-03), an "other key"
+        // not in D-09's reselection table, and any key held with Ctrl/Alt/Super (D-162). A
+        // BackSpace after conversion is never forwarded (D-160/D-161) - it reverts to the
+        // raw romaji instead.
+        //
+        // A 2026-09-27 real-machine log (D-155) confirmed only that fcitx5's own send
+        // order to the Wayland compositor - commit_string, then commit(), then the
+        // forwarded key - held in every case examined; a follow-up retest found the
+        // earlier "commit lost" symptom reproduces only inside Claude Code's Alacritty
+        // chat input, not with cat/nano/gedit, so this comment no longer assumes that
+        // fcitx5's send order guarantees the client has finished applying the committed
+        // string before the forwarded key arrives.
         if (sekka_context_take_forward_key(ctx_)) {
             ic_.forwardKey(event.rawKey(), false);
         }
