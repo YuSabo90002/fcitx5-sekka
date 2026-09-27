@@ -34,6 +34,28 @@ using StandardPathsProvider = std::function<const StandardPaths &()>;
 /// Relative path of the master dictionary under a `StandardPathsType::PkgData` directory.
 inline constexpr char kMasterDictionaryRelativePath[] = "sekka/master-dict.db";
 
+/// Relative path of the user dictionary under a `StandardPathsType::PkgData` directory.
+inline constexpr char kUserDictionaryRelativePath[] = "sekka/user-dict.db";
+
+/// USER-01/USER-02: resolves the default user dictionary path as
+/// `paths().userDirectory(StandardPathsType::PkgData) / kUserDictionaryRelativePath`.
+///
+/// When `XDG_DATA_HOME` is set, this follows it (USER-01) - the same rule the master
+/// dictionary search already uses. When it is unset, `userDirectory(PkgData)` falls back to
+/// `$HOME/.local/share/fcitx5`, so the result is byte-identical to v1.0's hand-built
+/// `$HOME/.local/share/fcitx5/sekka/user-dict.db` and existing learned data keeps loading
+/// (USER-02).
+///
+/// Returns an empty path - no exception, no crash - instead of a real path in three cases,
+/// matching v1.0's "no `HOME` means no user dictionary" behavior (D-35):
+/// - constructing or querying `paths()` throws (e.g. `std::runtime_error("Home is not
+///   set")` when neither `HOME` nor any `XDG_*_HOME`/`FCITX_*_HOME` variable is set);
+/// - `userDirectory(PkgData)` returns an empty path;
+/// - `userDirectory(PkgData)` returns a path that is not absolute (a relative
+///   `XDG_DATA_HOME` must never place learned data under fcitx5's current working
+///   directory).
+std::filesystem::path defaultUserDictionaryPath(const StandardPathsProvider &paths);
+
 /// The result of resolving where the master dictionary might be.
 struct MasterDictionaryCandidates {
     /// Candidate paths, to be tried in this order.

@@ -719,3 +719,180 @@ TEST(SekkaDictPathTest, NoticesMapEveryOutcomeToItsText) {
     EXPECT_EQ(notices[1].body, "O:p1");
     EXPECT_EQ(notices[2].body, "S:u, p1");
 }
+
+// USER-01/USER-02/D-35: defaultUserDictionaryPath, verified against a real
+// `fcitx::StandardPaths` instance rooted at a temporary directory (and, for one test only,
+// the production `fcitx::StandardPaths::global()` singleton - see
+// GlobalInstanceMatchesV1PathWhenXdgDataHomeIsUnset below). No test ever creates a file; each
+// only computes a path.
+
+// USER-02: with `XDG_DATA_HOME` unset, the result is byte-identical to v1.0's hand-built
+// `$HOME/.local/share/fcitx5/sekka/user-dict.db`, so existing learned data keeps loading.
+TEST(SekkaUserDictPathTest, MatchesV1PathWhenXdgDataHomeIsUnset) {
+    auto root = testRoot("user_dict_matches_v1_no_xdg");
+    auto homeDir = root / "home";
+    std::filesystem::create_directories(homeDir);
+
+    ScopedEnvVar home("HOME", homeDir.string());
+    ScopedEnvVar xdgDataHome("XDG_DATA_HOME", std::nullopt);
+    ScopedEnvVar fcitxDataHome("FCITX_DATA_HOME", std::nullopt);
+
+    fcitx::StandardPaths paths(
+        "fcitx5", std::unordered_map<std::string, std::vector<std::filesystem::path>>{},
+        fcitx::StandardPathsOptions{});
+    fcitx::StandardPathsProvider provider = [&]() -> const fcitx::StandardPaths & {
+        return paths;
+    };
+
+    auto result = fcitx::defaultUserDictionaryPath(provider);
+
+    EXPECT_EQ(result.string(), homeDir.string() + "/.local/share/fcitx5/sekka/user-dict.db");
+
+    std::filesystem::remove_all(root);
+}
+
+// USER-02: a trailing slash on `HOME` reproduces v1.0's naive string concatenation (which
+// yields a doubled "//"), but the result still resolves to the same file once normalized.
+TEST(SekkaUserDictPathTest, MatchesV1FileWhenHomeHasTrailingSlash) {
+    auto root = testRoot("user_dict_trailing_slash");
+    auto homeDir = root / "home";
+    std::filesystem::create_directories(homeDir);
+    std::string homeValue = homeDir.string() + "/";
+
+    ScopedEnvVar home("HOME", homeValue);
+    ScopedEnvVar xdgDataHome("XDG_DATA_HOME", std::nullopt);
+    ScopedEnvVar fcitxDataHome("FCITX_DATA_HOME", std::nullopt);
+
+    fcitx::StandardPaths paths(
+        "fcitx5", std::unordered_map<std::string, std::vector<std::filesystem::path>>{},
+        fcitx::StandardPathsOptions{});
+    fcitx::StandardPathsProvider provider = [&]() -> const fcitx::StandardPaths & {
+        return paths;
+    };
+
+    auto result = fcitx::defaultUserDictionaryPath(provider);
+
+    // v1.0's formula: `home + "/.local/share/fcitx5/sekka/user-dict.db"`. With a trailing
+    // slash already on `home`, straight concatenation yields a doubled "//".
+    auto v1Path =
+        std::filesystem::path(homeValue + "/.local/share/fcitx5/sekka/user-dict.db");
+    EXPECT_EQ(result.lexically_normal(), v1Path.lexically_normal());
+
+    std::filesystem::remove_all(root);
+}
+
+// USER-01: an explicitly-set `XDG_DATA_HOME` takes priority over the `HOME`-derived default.
+TEST(SekkaUserDictPathTest, FollowsXdgDataHome) {
+    auto root = testRoot("user_dict_follows_xdg_data_home");
+    auto homeDir = root / "home";
+    auto xdgDataHomeDir = root / "custom-data-home";
+    std::filesystem::create_directories(homeDir);
+    std::filesystem::create_directories(xdgDataHomeDir);
+
+    ScopedEnvVar home("HOME", homeDir.string());
+    ScopedEnvVar xdgDataHome("XDG_DATA_HOME", xdgDataHomeDir.string());
+    ScopedEnvVar fcitxDataHome("FCITX_DATA_HOME", std::nullopt);
+
+    fcitx::StandardPaths paths(
+        "fcitx5", std::unordered_map<std::string, std::vector<std::filesystem::path>>{},
+        fcitx::StandardPathsOptions{});
+    fcitx::StandardPathsProvider provider = [&]() -> const fcitx::StandardPaths & {
+        return paths;
+    };
+
+    auto result = fcitx::defaultUserDictionaryPath(provider);
+
+    auto expected = xdgDataHomeDir / "fcitx5/sekka/user-dict.db";
+    EXPECT_EQ(result.lexically_normal(), expected.lexically_normal());
+
+    std::filesystem::remove_all(root);
+}
+
+// A relative `XDG_DATA_HOME` must never place learned data under fcitx5's current working
+// directory - `defaultUserDictionaryPath` rejects it and returns empty (no user dictionary).
+TEST(SekkaUserDictPathTest, RelativeXdgDataHomeYieldsEmpty) {
+    auto root = testRoot("user_dict_relative_xdg_data_home");
+    auto homeDir = root / "home";
+    std::filesystem::create_directories(homeDir);
+
+    ScopedEnvVar home("HOME", homeDir.string());
+    ScopedEnvVar xdgDataHome("XDG_DATA_HOME", std::string("relative/data"));
+    ScopedEnvVar fcitxDataHome("FCITX_DATA_HOME", std::nullopt);
+
+    fcitx::StandardPaths paths(
+        "fcitx5", std::unordered_map<std::string, std::vector<std::filesystem::path>>{},
+        fcitx::StandardPathsOptions{});
+    fcitx::StandardPathsProvider provider = [&]() -> const fcitx::StandardPaths & {
+        return paths;
+    };
+
+    auto result = fcitx::defaultUserDictionaryPath(provider);
+
+    EXPECT_TRUE(result.empty());
+
+    std::filesystem::remove_all(root);
+}
+
+// D-35: a provider that throws a synthetic exception (rather than a real fcitx5 exception -
+// see HomeAndXdgDataHomeUnsetYieldsEmptyWithoutThrowing below for that case) must not let the
+// exception escape `defaultUserDictionaryPath`.
+TEST(SekkaUserDictPathTest, ProviderExceptionYieldsEmpty) {
+    fcitx::StandardPathsProvider provider = []() -> const fcitx::StandardPaths & {
+        throw std::runtime_error("Home is not set");
+    };
+
+    auto result = fcitx::defaultUserDictionaryPath(provider);
+
+    EXPECT_TRUE(result.empty());
+}
+
+// D-35: with neither `HOME` nor any `XDG_*_HOME`/`FCITX_*_HOME` variable set, constructing a
+// real `fcitx::StandardPaths` throws `std::runtime_error("Home is not set")`. The
+// construction happens inside the provider lambda itself (not before it), so the exception
+// occurs at the same point `defaultUserDictionaryPath` calls `paths()` and is caught by its
+// own exception boundary - exercising the real fcitx5 exception, rather than the synthetic
+// one used by ProviderExceptionYieldsEmpty above.
+TEST(SekkaUserDictPathTest, HomeAndXdgDataHomeUnsetYieldsEmptyWithoutThrowing) {
+    ScopedEnvVar home("HOME", std::nullopt);
+    ScopedEnvVar xdgConfigHome("XDG_CONFIG_HOME", std::nullopt);
+    ScopedEnvVar xdgDataHome("XDG_DATA_HOME", std::nullopt);
+    ScopedEnvVar xdgCacheHome("XDG_CACHE_HOME", std::nullopt);
+    ScopedEnvVar xdgStateHome("XDG_STATE_HOME", std::nullopt);
+    ScopedEnvVar fcitxConfigHome("FCITX_CONFIG_HOME", std::nullopt);
+    ScopedEnvVar fcitxDataHome("FCITX_DATA_HOME", std::nullopt);
+
+    std::unique_ptr<fcitx::StandardPaths> holder;
+    fcitx::StandardPathsProvider provider = [&holder]() -> const fcitx::StandardPaths & {
+        holder = std::make_unique<fcitx::StandardPaths>(
+            "fcitx5",
+            std::unordered_map<std::string, std::vector<std::filesystem::path>>{},
+            fcitx::StandardPathsOptions{});
+        return *holder;
+    };
+
+    auto result = fcitx::defaultUserDictionaryPath(provider);
+
+    EXPECT_TRUE(result.empty());
+}
+
+// This is the only test in this binary that calls the production
+// `fcitx::StandardPaths::global()` singleton, which reads HOME/XDG_*/FCITX_DATA_* only once
+// per process (06-RESEARCH.md Pitfall 5). That is safe here because ctest's
+// `gtest_discover_tests` runs each TEST case as its own process (one `--gtest_filter`
+// invocation per ctest entry), so the env vars set immediately above are the only ones the
+// singleton ever observes in this process.
+TEST(SekkaUserDictPathTest, GlobalInstanceMatchesV1PathWhenXdgDataHomeIsUnset) {
+    auto root = testRoot("user_dict_global_matches_v1");
+    auto homeDir = root / "home";
+    std::filesystem::create_directories(homeDir);
+
+    ScopedEnvVar home("HOME", homeDir.string());
+    ScopedEnvVar xdgDataHome("XDG_DATA_HOME", std::nullopt);
+    ScopedEnvVar fcitxDataHome("FCITX_DATA_HOME", std::nullopt);
+
+    auto result = fcitx::defaultUserDictionaryPath(&fcitx::StandardPaths::global);
+
+    EXPECT_EQ(result.string(), homeDir.string() + "/.local/share/fcitx5/sekka/user-dict.db");
+
+    std::filesystem::remove_all(root);
+}

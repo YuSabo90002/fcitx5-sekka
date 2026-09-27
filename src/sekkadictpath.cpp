@@ -140,6 +140,13 @@ std::string dictionaryNoticeDedupKey(const std::vector<DictionaryErrorNotice> &n
     return key;
 }
 
+// RED-phase stub (06-04 Task 1): intentionally always returns an empty path so the new
+// SekkaUserDictPathTest cases compile and fail on their real assertions rather than a build
+// error. Replaced with the real implementation in the GREEN commit.
+std::filesystem::path defaultUserDictionaryPath(const StandardPathsProvider & /*paths*/) {
+    return {};
+}
+
 std::vector<DictionaryErrorNotice>
 buildMasterDictionaryNotices(const MasterDictionaryCandidates &resolved,
                               const DictCandidateWalkResult &walk,
