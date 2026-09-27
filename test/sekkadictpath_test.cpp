@@ -958,7 +958,7 @@ TEST(SekkaUserDictPathTest, FollowsXdgDataHome) {
 // the result stays absolute either way). Setting `FCITX_DATA_HOME` itself to a relative
 // value is what actually reaches `userDirectory(PkgData)` unresolved, since fcitx5 uses that
 // value exactly as given when the env var is present (06-RESEARCH.md `## Open Questions` 2:
-// "`XDG_DATA_HOME` が空でなければ相対パスでもそのまま使われる" - the same "used as-is" rule
+// "a non-empty `XDG_DATA_HOME` is used as-is even when it is relative" - the same "used as-is" rule
 // applies to `FCITX_DATA_HOME`, the higher-priority override for this package). The test
 // name matches this task's `<verify>` gate; the env var it manipulates is the one that
 // genuinely reproduces a relative `userDirectory(PkgData)` result.

@@ -97,7 +97,7 @@ TEST(SekkaConfigTest, LegacyMappingIsSavedAsEmptyOnTheNextSave) {
     ASSERT_TRUE(fcitx::writeAsIni(out, stream));
     const std::string ini = stream.str();
 
-    // D-121 前提の補足 (06-03-PLAN.md <objective>): record the exact line fcitx5 5.1.16
+    // D-121 premise note (06-03-PLAN.md <objective>): record the exact line fcitx5 5.1.16
     // writes for a `DictionaryPath` that equals its own default value, so the SUMMARY can
     // report whether this fcitx5 writes it as an active `DictionaryPath=` line or comments
     // it out as `# DictionaryPath=` (06-RESEARCH.md Pitfall 4's correction is about a newer
