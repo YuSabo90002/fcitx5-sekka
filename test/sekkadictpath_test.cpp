@@ -578,6 +578,88 @@ TEST(SekkaDictPathTest, SearchLocationListingFailureKeepsLocatedCandidates) {
     EXPECT_TRUE(notices.empty());
 }
 
+// D-35 / D-105: fixes the OTHER side of the exception-boundary split introduced for G-06-1 -
+// when the locate query (the FIRST provider call) fails, the search-location enumeration
+// (the second) is never attempted at all, and both `candidates` and `searched` come back
+// empty. `providerCalls == 1` is the check that the early return in
+// `resolveMasterDictionaryCandidates` actually took effect - an implementation that fell
+// through to the enumeration anyway would call the provider a second time and end up with 3
+// searched locations instead of 0 (see this task's SUMMARY.md for the one-time verification
+// that removing the early return does make this fail).
+TEST(SekkaDictPathTest, LocateFailureSkipsSearchLocationListing) {
+    SearchFixture fixture("locate_failure_skips_listing", /*numDataDirs=*/1);
+    writeDummyDictionary(fixture.dataDirDictPaths[0], 0444);
+
+    int providerCalls = 0;
+    fcitx::StandardPathsProvider provider = [&]() -> const fcitx::StandardPaths & {
+        ++providerCalls;
+        if (providerCalls == 1) {
+            throw std::runtime_error("Home is not set");
+        }
+        return *fixture.paths;
+    };
+
+    auto resolved = fcitx::resolveMasterDictionaryCandidates("", provider);
+
+    EXPECT_TRUE(resolved.isSearch);
+    EXPECT_TRUE(resolved.candidates.empty());
+    EXPECT_TRUE(resolved.searched.empty());
+    EXPECT_EQ(providerCalls, 1);
+}
+
+// G-06-1 / 06-REVIEW CR-01: the candidate that survives a search-location-listing failure
+// still goes through the ordinary CR-01 writable-path refusal untouched, and the D-127 "not
+// found" summary notice still fires (with an empty `searched` rendered as the relative
+// dictionary name, per `summarizeSearchLocations`). Root is excluded because CR-01's
+// writable check has no effect for root, same reason as the existing
+// SkipsWritableCandidateAndAdoptsNext test.
+TEST(SekkaDictPathTest, SearchLocationListingFailureStillRefusesWritableAndNotifies) {
+    if (::geteuid() == 0) {
+        GTEST_SKIP() << "CR-01's writable check has no effect when running as root";
+    }
+    SearchFixture fixture("search_location_listing_failure_writable", /*numDataDirs=*/1);
+    writeDummyDictionary(fixture.dataDirDictPaths[0], 0644);
+
+    int providerCalls = 0;
+    fcitx::StandardPathsProvider provider = [&]() -> const fcitx::StandardPaths & {
+        ++providerCalls;
+        if (providerCalls == 1) {
+            return *fixture.paths;
+        }
+        throw std::filesystem::filesystem_error(
+            "cannot list the search locations",
+            std::make_error_code(std::errc::permission_denied));
+    };
+
+    auto resolved = fcitx::resolveMasterDictionaryCandidates("", provider);
+    ASSERT_EQ(resolved.candidates.size(), 1u);
+    EXPECT_TRUE(resolved.searched.empty());
+
+    bool loaderCalled = false;
+    auto walk = fcitx::walkDictionaryCandidates(
+        resolved.candidates, [&](const std::filesystem::path &) {
+            loaderCalled = true;
+            return static_cast<int>(SEKKA_DICT_OK);
+        });
+
+    ASSERT_EQ(walk.attempts.size(), 1u);
+    EXPECT_EQ(walk.attempts[0].outcome, fcitx::DictCandidateOutcome::WritableRefused);
+    EXPECT_FALSE(loaderCalled);
+    EXPECT_FALSE(walk.adopted.has_value());
+
+    fcitx::MasterDictionaryNoticeTexts texts;
+    texts.writableRefused = "W:";
+    texts.notFoundInSearchLocations = "S:";
+    auto notices = fcitx::buildMasterDictionaryNotices(
+        resolved, walk, texts, fcitx::kMaxShownSearchLocations);
+
+    ASSERT_EQ(notices.size(), 2u);
+    EXPECT_EQ(notices[0].path, resolved.candidates[0].string());
+    EXPECT_EQ(notices[0].body, "W:" + resolved.candidates[0].string());
+    EXPECT_EQ(notices[1].path, std::string(fcitx::kMasterDictionaryRelativePath));
+    EXPECT_EQ(notices[1].body, "S:" + std::string(fcitx::kMasterDictionaryRelativePath));
+}
+
 // Confirms every `SekkaDictError` value (including unrecognized ones) maps to the expected
 // `DictCandidateOutcome`.
 TEST(SekkaDictPathTest, OutcomeFromEveryDictError) {
