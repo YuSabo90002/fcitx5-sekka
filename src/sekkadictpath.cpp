@@ -32,10 +32,9 @@ resolveMasterDictionaryCandidates(const std::string &configuredPath,
 
     result.isSearch = true;
     try {
-        const StandardPaths &sp = paths();
-        result.candidates =
-            sp.locateAll(StandardPathsType::PkgData, kMasterDictionaryRelativePath);
-        for (const auto &dir : sp.directories(StandardPathsType::PkgData)) {
+        result.candidates = paths().locateAll(StandardPathsType::PkgData,
+                                               kMasterDictionaryRelativePath);
+        for (const auto &dir : paths().directories(StandardPathsType::PkgData)) {
             result.searched.push_back(dir / kMasterDictionaryRelativePath);
         }
     } catch (const std::exception &e) {
