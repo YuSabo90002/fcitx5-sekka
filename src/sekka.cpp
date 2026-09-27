@@ -30,6 +30,31 @@
 
 namespace fcitx {
 
+namespace {
+
+// D-122 / 06-RESEARCH.md Pattern 3 & Pitfall 3: the single entry point that (re)builds
+// `config_` from `conf/sekka.conf`. `SekkaEngine`'s constructor does not go through
+// `reloadConfig()` - it always read the file itself inline - so before this function
+// existed there were two independent call sites that each had to remember to apply the
+// D-121~D-123 legacy-default rewrite; missing either one meant the rewrite worked at
+// startup but not on reload, or vice versa. Routing both the constructor and
+// `reloadConfig()` through this one function instead makes that impossible: the rewrite is
+// applied every time `config_` is repopulated from the file, with no separate call to
+// forget. `setConfig()` is unaffected by this consolidation - it already ends in
+// `reloadConfig()` (see below), so it goes through this function too, but it never calls
+// `fcitx::readAsIni` itself and this function never writes to `sekka.conf` (D-122: the
+// rewrite lives in memory only; nothing here calls `safeSaveAsIni`).
+void readSekkaConfig(SekkaConfig &config) {
+    fcitx::readAsIni(config, "conf/sekka.conf");
+    if (applyLegacyDictionaryPathDefault(config)) {
+        FCITX_INFO() << "DictionaryPath was the v1.0 default (" << kLegacyDefaultDictionaryPath
+                     << "); treating it as unset and searching the standard data "
+                        "directories instead. sekka.conf is not rewritten.";
+    }
+}
+
+} // namespace
+
 // === SekkaState implementation ===
 
 SekkaState::SekkaState(SekkaEngine *engine, InputContext &ic)
@@ -226,7 +251,7 @@ SekkaEngine::SekkaEngine(Instance *instance)
           [this](InputContext &ic) { return new SekkaState(this, ic); }) {
     // Registering the factory creates the SekkaState of any existing input context, so the
     // configuration and the dictionaries are loaded first.
-    fcitx::readAsIni(config_, "conf/sekka.conf");
+    readSekkaConfig(config_);
     openDictionaries();
     instance_->inputContextManager().registerProperty("sekkaState",
                                                        &factory_);
@@ -288,7 +313,7 @@ void SekkaEngine::reset(const InputMethodEntry & /*entry*/,
 }
 
 void SekkaEngine::reloadConfig() {
-    fcitx::readAsIni(config_, "conf/sekka.conf");
+    readSekkaConfig(config_);
     reloadDictionaries();
 }
 

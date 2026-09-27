@@ -28,6 +28,21 @@ msgstr "ユーザー辞書パス"
 msgid "Conversion key"
 msgstr "変換キー"
 
+#: src/sekkaconfig.h
+msgid ""
+"Leave empty to find sekka/master-dict.db automatically in the fcitx5 data "
+"directories ($XDG_DATA_HOME/fcitx5 first, then the fcitx5 directories "
+"under $XDG_DATA_DIRS). A path entered here is used as it is, without "
+"searching."
+msgstr "空欄にすると、fcitx5 のデータディレクトリ（まず $XDG_DATA_HOME/fcitx5、次に $XDG_DATA_DIRS 側の fcitx5 ディレクトリ）から sekka/master-dict.db を自動で探します。パスを入れると、探さずにそのパスだけを使います。"
+
+#: src/sekkaconfig.h
+msgid ""
+"Leave empty to use the default location, sekka/user-dict.db in the fcitx5 "
+"user data directory ($XDG_DATA_HOME/fcitx5, or ~/.local/share/fcitx5 when "
+"XDG_DATA_HOME is not set)."
+msgstr "空欄にすると既定の場所を使います。fcitx5 のユーザーデータディレクトリ（$XDG_DATA_HOME/fcitx5。XDG_DATA_HOME が未設定なら ~/.local/share/fcitx5）の sekka/user-dict.db です。"
+
 #: src/sekka.cpp
 msgid "Sekka: failed to load a dictionary"
 msgstr "Sekka: 辞書を読み込めませんでした"
