@@ -8,6 +8,7 @@ add_executable(sekka_test
     save_test.cpp
     candidate_list_test.cpp
     sekkadictpath_test.cpp
+    config_test.cpp
     ${CMAKE_SOURCE_DIR}/src/sekkacandidatelist.cpp
     ${CMAKE_SOURCE_DIR}/src/sekkadictpath.cpp
 )
