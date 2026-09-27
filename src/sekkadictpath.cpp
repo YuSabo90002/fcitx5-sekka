@@ -34,19 +34,35 @@ resolveMasterDictionaryCandidates(const std::string &configuredPath,
     try {
         result.candidates = paths().locateAll(StandardPathsType::PkgData,
                                                kMasterDictionaryRelativePath);
+    } catch (const std::exception &e) {
+        // D-35 / D-105: getting `paths()` (the `StandardPaths` constructor throws
+        // `std::runtime_error("Home is not set")` when neither `HOME` nor `XDG_DATA_HOME` is
+        // set) or the locate query itself failing never crosses the addon boundary - input
+        // continues with zero candidates. The search-location enumeration below is not
+        // attempted at all in this case: it would fail for the same underlying reason and
+        // only produce a second, redundant warning.
+        FCITX_WARN() << "cannot resolve the master dictionary search locations: "
+                     << e.what();
+        result.candidates.clear();
+        return result;
+    }
+    try {
         for (const auto &dir : paths().directories(StandardPathsType::PkgData)) {
             result.searched.push_back(dir / kMasterDictionaryRelativePath);
         }
     } catch (const std::exception &e) {
-        // D-35 / D-105: the `StandardPaths` constructor throws
-        // `std::runtime_error("Home is not set")` when neither `HOME` nor `XDG_DATA_HOME`
-        // is set, and the existence checks behind `directories()`/`locateAll()` may raise a
-        // `std::filesystem::filesystem_error`. Catching `std::exception` covers both; the
-        // failure never crosses the addon boundary, and search simply yields zero
-        // candidates instead of taking the process down.
-        FCITX_WARN() << "cannot resolve the master dictionary search locations: "
+        // G-06-1 / 06-REVIEW.md CR-01: `searched` is purely display information for the
+        // D-127 "not found in the search locations" summary notice. Losing it here must not
+        // discard the candidates already found above (D-124) - the only effect is an empty
+        // `searched`, which `summarizeSearchLocations` renders as the relative dictionary
+        // name so the summary stays meaningful. In fcitx5 5.1.16, `directories()` returns a
+        // span over an already-populated vector with no I/O at all, and `locateAll()` above
+        // uses the non-throwing `error_code` overload of `exists()` internally, so neither
+        // query is expected to throw in this fcitx5 version; this second boundary is
+        // defensive against a future fcitx5 implementation (or an allocation failure while
+        // building `searched`), not against a reachable failure today.
+        FCITX_WARN() << "cannot enumerate the master dictionary search locations: "
                      << e.what();
-        result.candidates.clear();
         result.searched.clear();
     }
     return result;

@@ -83,11 +83,23 @@ struct MasterDictionaryCandidates {
 /// (06-RESEARCH.md Pitfall 2). `searched` lists every directory `paths()` would have looked
 /// in (present or not), for use in a future "not found" summary (D-127, 06-02).
 ///
-/// If constructing/querying `paths()` throws - `std::runtime_error("Home is not set")` when
-/// neither `HOME` nor `XDG_DATA_HOME` is set, or a `std::filesystem::filesystem_error` from
-/// the existence checks - the exception is caught here and an empty candidate/search list is
-/// returned instead of letting it escape the addon boundary and take the whole process down
-/// (D-35 / D-105).
+/// Failures during search are caught in two separate boundaries, so a failure late in the
+/// process does not discard results already produced by an earlier, independent step:
+/// - If constructing/querying `paths()` or the locate query itself throws -
+///   `std::runtime_error("Home is not set")` when neither `HOME` nor `XDG_DATA_HOME` is set,
+///   or a `std::filesystem::filesystem_error` from the underlying existence check - both
+///   `candidates` and `searched` come back empty, and the search-location enumeration below
+///   is not attempted at all (D-35 / D-105).
+/// - If locate succeeds but the later search-location enumeration (`directories()`, run only
+///   to populate `searched` for a future "not found" summary) throws, `candidates` is left
+///   untouched and only `searched` comes back empty (G-06-1 / 06-REVIEW.md CR-01) - a
+///   display-only listing failing must never discard dictionaries that were actually found.
+///
+/// In fcitx5 5.1.16, `directories()` returns a span over an already-populated vector with no
+/// I/O, and `locateAll()` uses the non-throwing `error_code` overload of `exists()`
+/// internally, so neither call is expected to throw in this fcitx5 version; the two-boundary
+/// split above is defensive against a future fcitx5 implementation, not against a reachable
+/// failure today.
 MasterDictionaryCandidates
 resolveMasterDictionaryCandidates(const std::string &configuredPath,
                                    const StandardPathsProvider &paths);
