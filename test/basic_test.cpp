@@ -224,14 +224,16 @@ TEST(SekkaOperationTest, StagedWordCommitsOnNextKeyAndForwards) {
     sekka_context_free(ctx);
 }
 
-// A non-character key during input commits the romaji as it is and forwards it (D-03)
+// A non-character key during input commits the romaji as it is and forwards it
+// (D-03). Space was used here before D-158 (Phase 9) made it a printable key
+// that appends instead of forwarding, so Tab (0xFF09) is used instead.
 TEST(SekkaOperationTest, NonCharKeyCommitsRomajiAndForwards) {
     auto *ctx = sekka_context_new();
     ASSERT_NE(ctx, nullptr);
 
     sekka_context_process_key_event(ctx, 'h', 0, 0);
     sekka_context_process_key_event(ctx, 'i', 0, 0);
-    int consumed = sekka_context_process_key_event(ctx, 0x20, 0, 0);
+    int consumed = sekka_context_process_key_event(ctx, 0xFF09, 0, 0);
     EXPECT_EQ(consumed, 1);
 
     char *output = sekka_context_poll_output(ctx);
