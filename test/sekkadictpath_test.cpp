@@ -541,3 +541,181 @@ TEST(SekkaDictPathTest, OutcomeFromEveryDictError) {
     EXPECT_EQ(fcitx::dictCandidateOutcomeFromError(99), fcitx::DictCandidateOutcome::Other);
     EXPECT_EQ(fcitx::dictCandidateOutcomeFromError(-1), fcitx::DictCandidateOutcome::Other);
 }
+
+// D-127/PATH-06/Claude's Discretion: the summary shows the first `maxShown` locations and
+// folds the rest into a "+N" count; with 3 or fewer locations nothing is folded.
+TEST(SekkaDictPathTest, SummaryShowsUserLocationFirstAndFoldsTheRest) {
+    std::vector<std::filesystem::path> five{"a", "b", "c", "d", "e"};
+    EXPECT_EQ(fcitx::summarizeSearchLocations(five, 3), "a, b, c, ... (+2)");
+
+    std::vector<std::filesystem::path> three{"a", "b", "c"};
+    EXPECT_EQ(fcitx::summarizeSearchLocations(three, 3), "a, b, c");
+
+    std::vector<std::filesystem::path> one{"a"};
+    EXPECT_EQ(fcitx::summarizeSearchLocations(one, 3), "a");
+}
+
+// An empty searched-locations list (an explicit path never populates it) summarizes as the
+// relative dictionary name itself, so the summary is always meaningful.
+TEST(SekkaDictPathTest, SummaryOfNoLocationsIsTheRelativeName) {
+    EXPECT_EQ(fcitx::summarizeSearchLocations({}, 3),
+              std::string(fcitx::kMasterDictionaryRelativePath));
+}
+
+// v1.0 compatibility: a single notice's dedup key is byte-identical to the pre-06-02
+// `notifyDictionaryError()` key (`path + "\n" + body`), so an explicit-path failure's
+// suppression behaves exactly as before.
+TEST(SekkaDictPathTest, DedupKeyOfOneNoticeMatchesV1Key) {
+    std::vector<fcitx::DictionaryErrorNotice> notices{{"p", "b"}};
+    EXPECT_EQ(fcitx::dictionaryNoticeDedupKey(notices), "p\nb");
+    EXPECT_EQ(fcitx::dictionaryNoticeDedupKey({}), "");
+}
+
+// The batch key changes whenever any notice's content changes, whenever a notice is
+// added/removed, or whenever the order changes - so a genuinely different set of skipped
+// candidates is never silently treated as "the same as last time".
+TEST(SekkaDictPathTest, DedupKeyChangesWithEveryNoticeAndOrder) {
+    fcitx::DictionaryErrorNotice a{"pa", "ba"};
+    fcitx::DictionaryErrorNotice b{"pb", "bb"};
+    fcitx::DictionaryErrorNotice bPrime{"pb", "bb-different"};
+
+    auto keyAB = fcitx::dictionaryNoticeDedupKey({a, b});
+    auto keyA = fcitx::dictionaryNoticeDedupKey({a});
+    auto keyBA = fcitx::dictionaryNoticeDedupKey({b, a});
+    auto keyABPrime = fcitx::dictionaryNoticeDedupKey({a, bPrime});
+
+    EXPECT_NE(keyAB, keyA);
+    EXPECT_NE(keyAB, keyBA);
+    EXPECT_NE(keyAB, keyABPrime);
+}
+
+// D-127: when nothing was found in a search (isSearch, no candidates, no attempts), the
+// notice list has exactly one entry naming the searched locations.
+TEST(SekkaDictPathTest, NoticesForEmptySearchNameTheSearchedLocations) {
+    fcitx::MasterDictionaryCandidates resolved;
+    resolved.isSearch = true;
+    resolved.searched = {"u", "p1", "b"};
+    fcitx::DictCandidateWalkResult walk; // no attempts, no adopted
+
+    fcitx::MasterDictionaryNoticeTexts texts;
+    texts.notFoundInSearchLocations = "S:";
+
+    auto notices =
+        fcitx::buildMasterDictionaryNotices(resolved, walk, texts, /*maxShownLocations=*/3);
+
+    ASSERT_EQ(notices.size(), 1u);
+    EXPECT_EQ(notices[0].path, "u, p1, b");
+    EXPECT_EQ(notices[0].body, "S:u, p1, b");
+}
+
+// D-124/D-125/D-127: every skipped candidate gets its own notice (in walk order), followed
+// by the searched-locations summary when nothing was adopted.
+TEST(SekkaDictPathTest, NoticesForSkippedCandidatesEndWithTheSummary) {
+    fcitx::MasterDictionaryCandidates resolved;
+    resolved.isSearch = true;
+    resolved.searched = {"u", "p1"};
+    fcitx::DictCandidateWalkResult walk;
+    walk.attempts = {{"u", fcitx::DictCandidateOutcome::WritableRefused},
+                      {"p1", fcitx::DictCandidateOutcome::Corrupt}};
+    // walk.adopted stays empty.
+
+    fcitx::MasterDictionaryNoticeTexts texts;
+    texts.writableRefused = "W:";
+    texts.corrupt = "C:";
+    texts.notFoundInSearchLocations = "S:";
+
+    auto notices =
+        fcitx::buildMasterDictionaryNotices(resolved, walk, texts, /*maxShownLocations=*/3);
+
+    ASSERT_EQ(notices.size(), 3u);
+    EXPECT_EQ(notices[0].path, "u");
+    EXPECT_EQ(notices[0].body, "W:u");
+    EXPECT_EQ(notices[1].path, "p1");
+    EXPECT_EQ(notices[1].body, "C:p1");
+    EXPECT_EQ(notices[2].path, "u, p1");
+    EXPECT_EQ(notices[2].body, "S:u, p1");
+}
+
+// D-124: a skipped candidate followed by a successful load produces just the one skipped
+// candidate's notice - no summary, since something was adopted.
+TEST(SekkaDictPathTest, NoticesForSkippedCandidateThenLoadHaveNoSummary) {
+    fcitx::MasterDictionaryCandidates resolved;
+    resolved.isSearch = true;
+    resolved.searched = {"u", "p1"};
+    fcitx::DictCandidateWalkResult walk;
+    walk.attempts = {{"u", fcitx::DictCandidateOutcome::Corrupt},
+                      {"p1", fcitx::DictCandidateOutcome::Loaded}};
+    walk.adopted = std::filesystem::path("p1");
+
+    fcitx::MasterDictionaryNoticeTexts texts;
+    texts.corrupt = "C:";
+    texts.notFoundInSearchLocations = "S:";
+
+    auto notices =
+        fcitx::buildMasterDictionaryNotices(resolved, walk, texts, /*maxShownLocations=*/3);
+
+    ASSERT_EQ(notices.size(), 1u);
+    EXPECT_EQ(notices[0].path, "u");
+    EXPECT_EQ(notices[0].body, "C:u");
+}
+
+// D-126: an explicit-path failure never gets the D-127 summary appended, even though
+// nothing was adopted - its one notice is identical to v1.0's.
+TEST(SekkaDictPathTest, NoticesForExplicitFailureHaveNoSummary) {
+    fcitx::MasterDictionaryCandidates resolved;
+    resolved.isSearch = false;
+    resolved.searched = {}; // explicit path never populates `searched`.
+    fcitx::DictCandidateWalkResult walk;
+    walk.attempts = {{"x", fcitx::DictCandidateOutcome::NotFound}};
+    // walk.adopted stays empty.
+
+    fcitx::MasterDictionaryNoticeTexts texts;
+    texts.notFound = "N:";
+    texts.notFoundInSearchLocations = "S:";
+
+    auto notices =
+        fcitx::buildMasterDictionaryNotices(resolved, walk, texts, /*maxShownLocations=*/3);
+
+    ASSERT_EQ(notices.size(), 1u);
+    EXPECT_EQ(notices[0].path, "x");
+    EXPECT_EQ(notices[0].body, "N:x");
+}
+
+// A clean load (single Loaded attempt, nothing skipped) produces no notices at all.
+TEST(SekkaDictPathTest, NoticesForCleanLoadAreEmpty) {
+    fcitx::MasterDictionaryCandidates resolved;
+    resolved.isSearch = true;
+    resolved.searched = {"u"};
+    fcitx::DictCandidateWalkResult walk;
+    walk.attempts = {{"u", fcitx::DictCandidateOutcome::Loaded}};
+    walk.adopted = std::filesystem::path("u");
+
+    fcitx::MasterDictionaryNoticeTexts texts;
+    auto notices =
+        fcitx::buildMasterDictionaryNotices(resolved, walk, texts, /*maxShownLocations=*/3);
+
+    EXPECT_TRUE(notices.empty());
+}
+
+// Every non-Loaded outcome maps to its own text field.
+TEST(SekkaDictPathTest, NoticesMapEveryOutcomeToItsText) {
+    fcitx::MasterDictionaryCandidates resolved;
+    resolved.isSearch = true;
+    resolved.searched = {"u", "p1"};
+    fcitx::DictCandidateWalkResult walk;
+    walk.attempts = {{"u", fcitx::DictCandidateOutcome::Unreadable},
+                      {"p1", fcitx::DictCandidateOutcome::Other}};
+
+    fcitx::MasterDictionaryNoticeTexts texts;
+    texts.unreadable = "U:";
+    texts.other = "O:";
+    texts.notFoundInSearchLocations = "S:";
+
+    auto notices =
+        fcitx::buildMasterDictionaryNotices(resolved, walk, texts, /*maxShownLocations=*/3);
+
+    ASSERT_EQ(notices.size(), 3u);
+    EXPECT_EQ(notices[0].body, "U:u");
+    EXPECT_EQ(notices[1].body, "O:p1");
+    EXPECT_EQ(notices[2].body, "S:u, p1");
+}

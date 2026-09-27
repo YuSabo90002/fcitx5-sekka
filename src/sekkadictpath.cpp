@@ -99,4 +99,25 @@ walkDictionaryCandidates(const std::vector<std::filesystem::path> &candidates,
     return result;
 }
 
+// RED-phase stub (06-02 Task 2): always returns an empty string, deliberately wrong so the
+// new SekkaDictPathTest cases fail on real assertions before the real implementation lands.
+std::string summarizeSearchLocations(const std::vector<std::filesystem::path> & /*searched*/,
+                                      std::size_t /*maxShown*/) {
+    return "";
+}
+
+// RED-phase stub (06-02 Task 2): always returns an empty string.
+std::string dictionaryNoticeDedupKey(const std::vector<DictionaryErrorNotice> & /*notices*/) {
+    return "";
+}
+
+// RED-phase stub (06-02 Task 2): always returns an empty list.
+std::vector<DictionaryErrorNotice>
+buildMasterDictionaryNotices(const MasterDictionaryCandidates & /*resolved*/,
+                              const DictCandidateWalkResult & /*walk*/,
+                              const MasterDictionaryNoticeTexts & /*texts*/,
+                              std::size_t /*maxShownLocations*/) {
+    return {};
+}
+
 } // namespace fcitx

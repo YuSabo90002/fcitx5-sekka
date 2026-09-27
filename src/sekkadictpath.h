@@ -6,6 +6,7 @@
 #ifndef SEKKA_DICT_PATH_H
 #define SEKKA_DICT_PATH_H
 
+#include <cstddef>
 #include <filesystem>
 #include <functional>
 #include <optional>
@@ -114,6 +115,76 @@ using DictCandidateLoader = std::function<int(const std::filesystem::path &)>;
 DictCandidateWalkResult
 walkDictionaryCandidates(const std::vector<std::filesystem::path> &candidates,
                           const DictCandidateLoader &tryLoad);
+
+/// Maximum number of searched locations shown in a user-facing notification body (D-127).
+/// The rest are folded into a "+N" count; the full list still goes to the log
+/// (`FCITX_WARN`) with no limit. NixOS's `XDG_DATA_DIRS` can list a dozen `/nix/store`
+/// paths, and a notification listing all of them would be unreadable (06-CONTEXT.md
+/// Claude's Discretion).
+inline constexpr std::size_t kMaxShownSearchLocations = 3;
+
+/// Renders `searched` as a short, human-readable summary: the first `maxShown` locations
+/// joined by ", ", followed by ", ... (+N)" for the rest when there are more than
+/// `maxShown`. An empty `searched` (e.g. an explicit path, which never populates it) is
+/// rendered as the relative dictionary name itself (`kMasterDictionaryRelativePath`), so a
+/// summary is always meaningful even with nothing to list. `maxShown == 0` is treated as 1
+/// (there is always at least one location worth naming - the user-side directory is always
+/// first per `resolveMasterDictionaryCandidates`).
+std::string summarizeSearchLocations(const std::vector<std::filesystem::path> &searched,
+                                      std::size_t maxShown);
+
+/// One notification about a dictionary load problem, ready to hand to the notifications
+/// addon (or to a log line).
+struct DictionaryErrorNotice {
+    /// The dictionary path this notice is about, or - for the D-127 "not found in the
+    /// search locations" notice - the searched-locations summary. Used only as the first
+    /// half of the dedup key; the displayed text lives entirely in `body`.
+    std::string path;
+    /// The full notification/log text (a prefix from `MasterDictionaryNoticeTexts`,
+    /// followed by `path`).
+    std::string body;
+};
+
+/// Computes the deduplication key for a batch of notices from one `openDictionaries()`
+/// call. One notice's key is `path + "\n" + body` - identical to v1.0's
+/// `notifyDictionaryError()` key, so the single-notice case (an explicit path failure)
+/// dedups exactly as it did before this plan. Multiple notices are joined with "\n\n", so
+/// the key changes if any notice's path/body changes, if a notice is added or removed, or
+/// if their order changes. An empty batch's key is "".
+std::string dictionaryNoticeDedupKey(const std::vector<DictionaryErrorNotice> &notices);
+
+/// The notification/log text prefixes for each non-`Loaded` outcome, plus the D-127
+/// "not found in the search locations" prefix. Each field is a prefix; the candidate path
+/// (or, for `notFoundInSearchLocations`, the searched-locations summary) is appended to it
+/// by `buildMasterDictionaryNotices`. Callers build one instance with translated
+/// (`_()`-wrapped) text for user-facing notifications, and a second with the untranslated
+/// v1.0 English text for the log (`FCITX_WARN`), so this struct itself has no i18n
+/// dependency.
+struct MasterDictionaryNoticeTexts {
+    std::string writableRefused;
+    std::string notFound;
+    std::string unreadable;
+    std::string corrupt;
+    std::string other;
+    /// D-127 / PATH-06: prefix for the "master dictionary not found in the search
+    /// locations" summary notice.
+    std::string notFoundInSearchLocations;
+};
+
+/// Builds the ordered list of notices for one `openDictionaries()` call's master
+/// dictionary domain: one notice per non-`Loaded` attempt (in walk order, using the
+/// `texts` field matching its outcome), followed - only when `resolved.isSearch` is true
+/// and nothing was adopted - by exactly one D-127 notice whose `path` is
+/// `summarizeSearchLocations(resolved.searched, maxShownLocations)` and whose `body` is
+/// `texts.notFoundInSearchLocations` followed by that same summary. An explicit-path
+/// failure (`resolved.isSearch == false`) never gets this trailing summary notice (D-126):
+/// its one notice is identical to v1.0's. A search that DID adopt a candidate also never
+/// gets it, even though earlier candidates may have been skipped along the way.
+std::vector<DictionaryErrorNotice>
+buildMasterDictionaryNotices(const MasterDictionaryCandidates &resolved,
+                              const DictCandidateWalkResult &walk,
+                              const MasterDictionaryNoticeTexts &texts,
+                              std::size_t maxShownLocations);
 
 } // namespace fcitx
 
