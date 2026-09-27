@@ -1,6 +1,7 @@
 set(SEKKA_SOURCES
     sekka.cpp
     sekkacandidatelist.cpp
+    sekkadictpath.cpp
 )
 
 add_library(sekka-module MODULE ${SEKKA_SOURCES})
