@@ -65,6 +65,10 @@ void sekka_context_select_candidate(SekkaContextFfi *ctx, int index);
 void sekka_context_confirm_candidate(SekkaContextFfi *ctx);
 int sekka_context_get_candidate_index(SekkaContextFfi *ctx);
 int sekka_context_take_forward_key(SekkaContextFfi *ctx);
+// Word registration (Phase 10, D-170).
+int sekka_context_is_registering(SekkaContextFfi *ctx);
+char *sekka_context_get_registration_reading(SekkaContextFfi *ctx);
+char *sekka_context_get_registration_prompt(SekkaContextFfi *ctx);
 void sekka_free_candidate_list(char **candidates, int count);
 void sekka_free_string(char *str);
 const char *sekka_get_version(void);
@@ -109,6 +113,19 @@ public:
 private:
     /// Updates the preedit display
     void updatePreedit();
+
+    /// Updates the display while word registration is active (D-170,
+    /// Phase 10). Sets the application's own input position (client
+    /// preedit) to just the outermost step's reading, and the popup (auxUp +
+    /// preedit) to the registration label/prompt and the word being
+    /// assembled, together instead of the usual either/or split.
+    void updateRegistrationPanel();
+
+    /// Attaches the candidate window to the input panel when there are
+    /// candidates to show (D-116). Factored out of `updatePreedit()` so
+    /// `updateRegistrationPanel()` can reuse the same candidate-list wiring
+    /// (the body and the callback lambda are unchanged either way).
+    void attachCandidateList();
 
     /// Checks for committed output and sends it to the application
     void checkAndCommit();

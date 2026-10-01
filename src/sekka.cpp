@@ -196,6 +196,13 @@ void SekkaState::updatePreedit() {
         return;
     }
 
+    // Phase 10 (D-170): while registering, the client preedit and the popup
+    // are built together instead of either/or - delegate entirely.
+    if (sekka_context_is_registering(ctx_)) {
+        updateRegistrationPanel();
+        return;
+    }
+
     char *preeditStr = sekka_context_get_preedit(ctx_);
     if (preeditStr) {
         auto &inputPanel = ic_.inputPanel();
@@ -215,24 +222,90 @@ void SekkaState::updatePreedit() {
             }
         }
 
-        // The candidate window is shown only during reselection (candidate count > 0) (D-04/D-08).
-        if (sekka_context_get_candidate_count(ctx_) > 0) {
-            // D-116: this callback runs after a click commit of a candidate
-            // (SekkaCandidateWord::select() -> selectAt()). Calling the same two steps in
-            // the same order as after `consumed` in keyEvent() (around lines 78-79 of this
-            // file) keeps the output path of a click commit identical to the output path of
-            // key input.
-            ic_.inputPanel().setCandidateList(
-                std::make_unique<SekkaCandidateList>(
-                    ctx_, [this] {
-                        checkAndCommit();
-                        updatePreedit();
-                    }));
-        }
+        attachCandidateList();
 
         ic_.updatePreedit();
         ic_.updateUserInterface(UserInterfaceComponent::InputPanel);
     }
+}
+
+void SekkaState::attachCandidateList() {
+    // The candidate window is shown only during reselection (candidate count > 0) (D-04/D-08).
+    if (sekka_context_get_candidate_count(ctx_) > 0) {
+        // D-116: this callback runs after a click commit of a candidate
+        // (SekkaCandidateWord::select() -> selectAt()). Calling the same two steps in
+        // the same order as after `consumed` in keyEvent() (around lines 78-79 of this
+        // file) keeps the output path of a click commit identical to the output path of
+        // key input.
+        ic_.inputPanel().setCandidateList(
+            std::make_unique<SekkaCandidateList>(
+                ctx_, [this] {
+                    checkAndCommit();
+                    updatePreedit();
+                }));
+    }
+}
+
+void SekkaState::updateRegistrationPanel() {
+    auto &inputPanel = ic_.inputPanel();
+    inputPanel.reset();
+
+    // D-170: the application's own input position (client preedit) shows
+    // only the outermost step's reading, underlined and with no label and no
+    // in-progress word - `setCursor` is deliberately not called here, so the
+    // text cursor stays on the popup side rather than jumping to the client
+    // preedit. The user's input history never reaches a log (D-102/D-105):
+    // these three getters are only ever handed to `Text`/`std::string`, never
+    // printed.
+    char *readingStr = sekka_context_get_registration_reading(ctx_);
+    std::string reading(readingStr ? readingStr : "");
+    if (readingStr) {
+        sekka_free_string(readingStr);
+    }
+
+    char *promptStr = sekka_context_get_registration_prompt(ctx_);
+    std::string prompt(promptStr ? promptStr : "");
+    if (promptStr) {
+        sekka_free_string(promptStr);
+    }
+
+    char *wordStr = sekka_context_get_preedit(ctx_);
+    std::string word(wordStr ? wordStr : "");
+    if (wordStr) {
+        sekka_free_string(wordStr);
+    }
+
+    if (ic_.capabilityFlags().test(CapabilityFlag::Preedit)) {
+        Text clientPreeditText;
+        clientPreeditText.append(reading, TextFormatFlag::Underline);
+        ic_.inputPanel().setClientPreedit(clientPreeditText);
+
+        Text auxUpText;
+        auxUpText.append(prompt);
+        ic_.inputPanel().setAuxUp(auxUpText);
+
+        Text wordText;
+        wordText.append(word);
+        wordText.setCursor(word.size());
+        ic_.inputPanel().setPreedit(wordText);
+    } else {
+        // D-170 Claude's Discretion: without client-preedit support, the
+        // reading has nowhere of its own to go, so it is folded into auxUp
+        // ahead of the label/prompt instead of being dropped.
+        Text auxUpText;
+        auxUpText.append(reading + " " + prompt);
+        ic_.inputPanel().setAuxUp(auxUpText);
+
+        Text wordText;
+        wordText.append(word);
+        wordText.setCursor(word.size());
+        ic_.inputPanel().setPreedit(wordText);
+    }
+
+    attachCandidateList();
+
+    ic_.updatePreedit();
+    ic_.updateUserInterface(UserInterfaceComponent::InputPanel);
 }
 
 void SekkaState::checkAndCommit() {
