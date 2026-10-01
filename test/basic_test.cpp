@@ -323,13 +323,35 @@ TEST(SekkaOperationTest, NonCharKeyInReselectConfirmsAndForwards) {
     sekka_context_free(ctx);
 }
 
-// A key with Alt is treated as a non-character key
-TEST(SekkaOperationTest, AltKeyIsNonCharKey) {
+// D-185 (Phase 11): a printable key held with Alt alone is appended to whatever the key
+// event commits and is not forwarded (until Phase 11 it was committed and forwarded as a
+// non-character key, D-162)
+TEST(SekkaOperationTest, AltPrintableKeyIsCommittedWithoutAlt) {
     auto *ctx = sekka_context_new();
     ASSERT_NE(ctx, nullptr);
 
     sekka_context_process_key_event(ctx, 'k', 0, 0);
     int consumed = sekka_context_process_key_event(ctx, 'f', 0x8, 0);
+    EXPECT_EQ(consumed, 1);
+
+    char *output = sekka_context_poll_output(ctx);
+    ASSERT_NE(output, nullptr);
+    EXPECT_STREQ(output, "kf");
+    sekka_free_string(output);
+
+    EXPECT_EQ(sekka_context_take_forward_key(ctx), 0);
+
+    sekka_context_free(ctx);
+}
+
+// D-188: a key held with Ctrl and Alt together is still a non-character key (the romaji is
+// committed as it is and the key is forwarded)
+TEST(SekkaOperationTest, CtrlAltKeyIsNonCharKey) {
+    auto *ctx = sekka_context_new();
+    ASSERT_NE(ctx, nullptr);
+
+    sekka_context_process_key_event(ctx, 'k', 0, 0);
+    int consumed = sekka_context_process_key_event(ctx, 'f', 0x4 | 0x8, 0);
     EXPECT_EQ(consumed, 1);
 
     char *output = sekka_context_poll_output(ctx);

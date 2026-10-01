@@ -103,6 +103,19 @@ void SekkaState::keyEvent(KeyEvent &event) {
         modifiers |= 0x40; // the Super bit
     }
 
+    // D-185/D-186 (Phase 11): `KeyEvent::key()` is `rawKey().normalize()`, and
+    // `Key::normalize()` (fcitx-utils) folds a lowercase letter to uppercase whenever a
+    // modifier other than Shift is held, so the key of Alt+d reads as Alt+D; committing
+    // that would turn Vim's `dd` into `DD`. `rawKey()` is the key after keyboard-layout
+    // conversion and before normalization, and its keysym already carries Shift and
+    // Caps Lock as the layout produced them (Alt+Shift+d gives `D`, Alt+Shift+; gives
+    // `colon`), which is exactly the character D-186 wants. Keys held with Ctrl or
+    // Super keep the normalized keysym as before (libsekka's `ctrl_letter` accepts
+    // both cases).
+    if ((modifiers & 0x8) && !(modifiers & (0x4 | 0x40))) {
+        keysym = event.rawKey().sym();
+    }
+
     // D-108/D-111: the trigger key decision happens here (after the early return for
     // isModifier() and before anything is passed to libsekka). The trigger is checked
     // first, so assigning TriggerKey to an ordinary key that would otherwise land in the
@@ -150,6 +163,12 @@ void SekkaState::keyEvent(KeyEvent &event) {
         // not in D-09's reselection table, and any key held with Ctrl/Alt/Super (D-162). A
         // BackSpace after conversion is never forwarded (D-160/D-161) - it reverts to the
         // raw romaji instead.
+        //
+        // D-185 (Phase 11): a printable key held with Alt alone is also consumed and
+        // committed as text with the Alt removed, so what is forwarded here is now only:
+        // a non-printable key (Alt held or not, D-187), an "other key" not in D-09's
+        // reselection table after the candidate is committed, and a key held with Ctrl
+        // or Super (Alt or not, D-188).
         //
         // A 2026-09-27 real-machine log (D-155) confirmed only that fcitx5's own send
         // order to the Wayland compositor - commit_string, then commit(), then the
