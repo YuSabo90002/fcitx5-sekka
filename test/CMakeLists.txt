@@ -7,6 +7,7 @@ add_executable(sekka_test
     dict_error_test.cpp
     save_test.cpp
     candidate_list_test.cpp
+    registration_test.cpp
     sekkadictpath_test.cpp
     config_test.cpp
     ${CMAKE_SOURCE_DIR}/src/sekkacandidatelist.cpp
