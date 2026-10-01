@@ -113,3 +113,41 @@ TEST(SekkaRegistrationTest, ClickingAnInnerCandidateGoesIntoTheWord) {
 
     sekka_context_free(ctx);
 }
+
+// D-181: `sekka_context_finalize_for_reset` (the entry `SekkaState::reset`
+// uses for an explicit reset or an input method switch, Task 2) commits only
+// the outermost step's typed reading - not the word being assembled ("Ki") -
+// and ends registration entirely.
+TEST(SekkaRegistrationTest, FinalizeForResetCommitsTheOutermostReading) {
+    auto *ctx = sekka_context_new();
+    ASSERT_NE(ctx, nullptr);
+
+    sekka_context_process_key_event(ctx, 'S', 0, 0);
+    sekka_context_process_key_event(ctx, 'e', 0, 0);
+    sekka_context_process_key_event(ctx, 'k', 0, 0);
+    sekka_context_process_key_event(ctx, 'k', 0, 0);
+    sekka_context_process_key_event(ctx, 'a', 0, 0);
+    sekka_context_trigger(ctx);
+
+    int entered = sekka_context_process_key_event(ctx, 'r', 0x4, 0);
+    ASSERT_EQ(entered, 1);
+
+    sekka_context_process_key_event(ctx, 'K', 0, 0);
+    sekka_context_process_key_event(ctx, 'i', 0, 0);
+
+    sekka_context_finalize_for_reset(ctx);
+
+    char *output = sekka_context_poll_output(ctx);
+    ASSERT_NE(output, nullptr);
+    EXPECT_STREQ(output, "せっか");
+    sekka_free_string(output);
+
+    EXPECT_EQ(sekka_context_is_registering(ctx), 0);
+
+    sekka_context_free(ctx);
+}
+
+// NULL safety, matching the other C ABI functions of this phase.
+TEST(SekkaRegistrationTest, FinalizeForResetIsNullSafe) {
+    sekka_context_finalize_for_reset(nullptr);
+}

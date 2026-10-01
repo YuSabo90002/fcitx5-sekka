@@ -69,6 +69,7 @@ int sekka_context_take_forward_key(SekkaContextFfi *ctx);
 int sekka_context_is_registering(SekkaContextFfi *ctx);
 char *sekka_context_get_registration_reading(SekkaContextFfi *ctx);
 char *sekka_context_get_registration_prompt(SekkaContextFfi *ctx);
+void sekka_context_finalize_for_reset(SekkaContextFfi *ctx);
 void sekka_free_candidate_list(char **candidates, int count);
 void sekka_free_string(char *str);
 const char *sekka_get_version(void);

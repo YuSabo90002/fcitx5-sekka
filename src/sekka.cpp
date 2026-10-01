@@ -179,9 +179,13 @@ void SekkaState::reset(bool commitPending) {
     // never calling commitString in the first place.
     // Clearing the libsekka-side context itself and resetting the panel always happen,
     // whether or not anything was committed.
+    // During word registration (Phase 10), an explicit reset or an input method switch
+    // commits only the outermost reading that the application shows (D-181), and a real
+    // focus loss discards every registration step without committing anything (D-180);
+    // the click path of the candidate window keeps using sekka_context_confirm_candidate.
     if (ctx_) {
         if (commitPending) {
-            sekka_context_confirm_candidate(ctx_);
+            sekka_context_finalize_for_reset(ctx_);
             checkAndCommit();
         }
         sekka_context_reset(ctx_);
