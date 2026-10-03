@@ -36,7 +36,8 @@ makes "reselect right after committing" work without having to take back text al
 the application.
 
 As of v1.4, `wi` / `we` produce うぃ / うぇ (they produced ゐ / ゑ up to v1.3). Type ゐ / ゑ
-with `yi` (or `wyi`) / `wye`.
+with `yi` (or `wyi`) / `wye`. Words learned or registered up to v1.3 under a reading that
+contains ゐ / ゑ show up when you type that reading this way, not with `wi` / `we`.
 
 ## Dependencies
 
