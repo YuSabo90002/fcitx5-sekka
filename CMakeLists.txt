@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.13)
-project(fcitx5-sekka VERSION 0.4.0 LANGUAGES CXX)
+project(fcitx5-sekka VERSION 0.5.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -25,7 +25,7 @@ find_package(Gettext REQUIRED)
 
 # The libsekka version CI builds against. bin/sekka_version.sh reads this line, so keep
 # the format as it is (the same practice as fcitx5-cskk).
-# GITHUB_ACTION_BUILD_SEKKA_VERSION=0.4.0
+# GITHUB_ACTION_BUILD_SEKKA_VERSION=0.5.0
 pkg_check_modules(SEKKA REQUIRED IMPORTED_TARGET sekka>=0.1)
 
 include("${FCITX_INSTALL_CMAKECONFIG_DIR}/Fcitx5Utils/Fcitx5CompilerSettings.cmake" OPTIONAL)
