@@ -35,6 +35,9 @@ The commit is deferred until the next key that is not the trigger. That is the d
 makes "reselect right after committing" work without having to take back text already sent to
 the application.
 
+As of v1.4, `wi` / `we` produce うぃ / うぇ (they produced ゐ / ゑ up to v1.3). Type ゐ / ゑ
+with `yi` (or `wyi`) / `wye`.
+
 ## Dependencies
 
 - fcitx5 5.1.13 or later (the dictionaries are located through the new `StandardPaths` API; `FCITX_ADDON_FACTORY_V2` also needs 5.1.12. The 5.1.2 of Ubuntu 24.04 is too old)
