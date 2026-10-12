@@ -39,6 +39,22 @@ As of v1.4, `wi` / `we` produce うぃ / うぇ (they produced ゐ / ゑ up to v
 with `yi` (or `wyi`) / `wye`. Words learned or registered up to v1.3 under a reading that
 contains ゐ / ゑ show up when you type that reading this way, not with `wi` / `we`.
 
+Typing `/` in the middle of romaji commits the romaji typed so far as it is, without
+converting it, and leaves only the `/` in the input. If you then convert the romaji typed
+after it with Ctrl-J, the `/` disappears and only the part after it is converted
+(`Linux/Nihongo` + Ctrl-J → Linux日本語). If you commit with any key other than Ctrl-J, the `/`
+comes out as a character (`and/or` + space → and/or). A `/` typed with no romaji pending comes
+out as it always did. It exists to separate Latin text from Japanese, and there is no setting
+for it.
+
+For 30 seconds after Ctrl-J, each time you type romaji, the first candidate that Ctrl-J would
+give right now is shown on the top line of the input panel in the form `[日本語]` (`Nihongo` →
+[日本語], `nihongo` → [にほんご]). It is not shown while the first candidate is displayed or
+during reselection. The 30 seconds start over each time you press Ctrl-J. The guide disappears
+when the 30 seconds run out, when you press Ctrl-G, or when the focus moves away, and does not
+appear again until the next Ctrl-J. Ctrl-G's other effects (committing the romaji as it is,
+cancelling a reselection) are unchanged. There is no setting for it.
+
 ## Dependencies
 
 - fcitx5 5.1.13 or later (the dictionaries are located through the new `StandardPaths` API; `FCITX_ADDON_FACTORY_V2` also needs 5.1.12. The 5.1.2 of Ubuntu 24.04 is too old)
