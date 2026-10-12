@@ -327,6 +327,16 @@ void SekkaState::syncGuideTimer() {
         1, [this](EventSourceTime *, uint64_t) {
             if (guideShown_) {
                 updatePreedit();
+                // If the timer fired before the deadline, libsekka still returns the
+                // guide and the one-shot timer is spent. Re-arm for the remainder
+                // (only `setTime` + `setOneShot()`, which are safe inside the callback;
+                // dropping the timer here would not be). 0 means the window has closed.
+                const uint64_t rest = guideTimerDelayUsec(
+                    ctx_ ? sekka_context_guide_remaining_ms(ctx_) : 0);
+                if (rest > 0 && guideTimer_) {
+                    guideTimer_->setTime(now(CLOCK_MONOTONIC) + rest);
+                    guideTimer_->setOneShot();
+                }
             }
             return true;
         });
