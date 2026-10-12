@@ -247,6 +247,18 @@ void SekkaState::updatePreedit() {
 
         attachCandidateList();
 
+        // GUIDE-01 / D-232 (Phase 16): the real-time guide goes to auxUp, which is
+        // independent of preedit, so it is not split by the Preedit capability
+        // (RESEARCH Pitfall 6). It must come after `inputPanel.reset()` above, which
+        // clears auxUp too. Whether to show it is decided in libsekka alone; here a
+        // non-empty text is just shown. The assembly lives in `guideAuxUpText`
+        // (sekka.h) so that ctest can call the same function (D-233). The string
+        // goes only into `Text`, never to a log (D-102/D-105).
+        const Text guide = guideAuxUpText(sekka_context_get_guide(ctx_));
+        if (!guide.empty()) {
+            ic_.inputPanel().setAuxUp(guide);
+        }
+
         ic_.updatePreedit();
         ic_.updateUserInterface(UserInterfaceComponent::InputPanel);
     }

@@ -23,6 +23,7 @@
 #include <fcitx/inputcontextproperty.h>
 #include <fcitx/inputmethodengine.h>
 #include <fcitx/instance.h>
+#include <fcitx/text.h>
 
 #include "sekkaconfig.h"
 #include "sekkadictpath.h"
@@ -70,6 +71,8 @@ int sekka_context_is_registering(SekkaContextFfi *ctx);
 char *sekka_context_get_registration_reading(SekkaContextFfi *ctx);
 char *sekka_context_get_registration_prompt(SekkaContextFfi *ctx);
 void sekka_context_finalize_for_reset(SekkaContextFfi *ctx);
+// Real-time guide (Phase 16, GUIDE-01).
+char *sekka_context_get_guide(SekkaContextFfi *ctx);
 void sekka_free_candidate_list(char **candidates, int count);
 void sekka_free_string(char *str);
 const char *sekka_get_version(void);
@@ -89,6 +92,30 @@ int sekka_dictionary_save(SekkaDictionaryFfi *dict);
 }
 
 namespace fcitx {
+
+/// Real-time guide (Phase 16, GUIDE-01 / D-232): turns the string returned by
+/// `sekka_context_get_guide` into the auxUp text that `SekkaState::updatePreedit()`
+/// shows.
+///
+/// Takes ownership of `guide` and frees it with `sekka_free_string` exactly once.
+/// NULL or an empty string - libsekka shows nothing outside the window, in the
+/// commit display, while reselecting or while registering - gives an empty `Text`,
+/// and the caller then leaves auxUp as the panel reset left it. Otherwise one plain
+/// segment, unchanged: what to show and the brackets are decided in libsekka alone.
+///
+/// Pure and free of any fcitx instance or input context on purpose, so ctest
+/// (`guide_test.cpp`, which cannot link `sekka.cpp`) calls this very function
+/// (D-233). The text is never logged (D-102/D-105).
+inline Text guideAuxUpText(char *guide) {
+    Text text;
+    if (guide) {
+        if (guide[0] != '\0') {
+            text.append(std::string(guide));
+        }
+        sekka_free_string(guide);
+    }
+    return text;
+}
 
 class SekkaEngine;
 
