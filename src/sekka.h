@@ -7,6 +7,7 @@
 #define SEKKA_H
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -18,6 +19,7 @@
 // `<fcitx-module/notifications/notifications_public.h>` does not resolve in this build
 // (measured; Fcitx5ModuleNotificationsConfig.cmake). The short form is used.
 #include <notifications_public.h>
+#include <fcitx-utils/event.h>
 #include <fcitx-utils/inputbuffer.h>
 #include <fcitx/addonfactory.h>
 #include <fcitx/addonmanager.h>
@@ -170,9 +172,24 @@ private:
     /// Checks for committed output and sends it to the application
     void checkAndCommit();
 
+    /// Arms, re-arms or drops the one-shot timer that clears the real-time guide at
+    /// the end of its 30-second window without a keystroke (D-229). The wait comes
+    /// only from `sekka_context_guide_remaining_ms`, so the deadline itself lives in
+    /// libsekka alone.
+    void syncGuideTimer();
+
     SekkaEngine *engine_;
     InputContext &ic_;
     SekkaContextFfi *ctx_;
+
+    /// Whether the last `updatePreedit()` put a guide into auxUp. The timer callback
+    /// redraws only then, so an expiry during word registration leaves the
+    /// registration panel alone (D-170).
+    bool guideShown_ = false;
+
+    /// The one-shot guide timer, one per input context. It is dropped first in the
+    /// destructor, because its callback captures `this`.
+    std::unique_ptr<EventSourceTime> guideTimer_;
 };
 
 /// The Sekka input method engine

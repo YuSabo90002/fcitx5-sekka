@@ -65,6 +65,9 @@ SekkaState::SekkaState(SekkaEngine *engine, InputContext &ic)
 }
 
 SekkaState::~SekkaState() {
+    // The timer callback captures `this`, so the timer is cancelled before anything
+    // else is torn down.
+    guideTimer_.reset();
     if (ctx_) {
         sekka_context_free(ctx_);
         ctx_ = nullptr;
@@ -181,6 +184,10 @@ void SekkaState::keyEvent(KeyEvent &event) {
             ic_.forwardKey(event.rawKey(), false);
         }
     }
+
+    // D-230/D-231 (Phase 16): runs whether or not the key was consumed - a passed-through
+    // Ctrl-J opens the window and a passed-through Ctrl-G closes it.
+    syncGuideTimer();
 }
 
 void SekkaState::reset(bool commitPending) {
@@ -209,6 +216,9 @@ void SekkaState::reset(bool commitPending) {
         }
         sekka_context_reset(ctx_);
     }
+    // `sekka_context_reset` has just closed the window (D-231), so this drops the timer.
+    guideShown_ = false;
+    syncGuideTimer();
     ic_.inputPanel().reset();
     ic_.updatePreedit();
     ic_.updateUserInterface(UserInterfaceComponent::InputPanel);
@@ -222,6 +232,9 @@ void SekkaState::updatePreedit() {
     // Phase 10 (D-170): while registering, the client preedit and the popup
     // are built together instead of either/or - delegate entirely.
     if (sekka_context_is_registering(ctx_)) {
+        // No guide is shown while registering, so a timer expiring now must not
+        // redraw (and so must not disturb) the registration panel (D-229 / D-170).
+        guideShown_ = false;
         updateRegistrationPanel();
         return;
     }
@@ -255,6 +268,7 @@ void SekkaState::updatePreedit() {
         // (sekka.h) so that ctest can call the same function (D-233). The string
         // goes only into `Text`, never to a log (D-102/D-105).
         const Text guide = guideAuxUpText(sekka_context_get_guide(ctx_));
+        guideShown_ = !guide.empty();
         if (!guide.empty()) {
             ic_.inputPanel().setAuxUp(guide);
         }
@@ -279,6 +293,44 @@ void SekkaState::attachCandidateList() {
                     updatePreedit();
                 }));
     }
+}
+
+void SekkaState::syncGuideTimer() {
+    // The wait comes only from libsekka (D-229); `guideTimerDelayUsec` (sekka.h, pinned
+    // by ctest) turns it into microseconds. 0 means no timer.
+    const uint64_t usec = guideTimerDelayUsec(
+        ctx_ ? sekka_context_guide_remaining_ms(ctx_) : 0);
+    if (usec == 0) {
+        guideTimer_.reset();
+        // RESEARCH Pitfall 10 / A3: if the guide was drawn a moment before the deadline,
+        // the remaining time may already be 0 here, so no timer would ever clear it.
+        // Redraw (libsekka now returns nothing) instead of leaving it until the next key.
+        if (guideShown_) {
+            updatePreedit();
+        }
+        return;
+    }
+    if (guideTimer_) {
+        // `setTime` rather than `setNextInterval`, whose presence on the 5.1.13 minimum
+        // is unverified (RESEARCH A1). `setOneShot()` re-arms a source that already fired.
+        guideTimer_->setTime(now(CLOCK_MONOTONIC) + usec);
+        guideTimer_->setOneShot();
+        return;
+    }
+    // accuracy 1us because 0 selects sd-event's default of 250ms. The callback always
+    // returns true because false is handed to sd-event as -1 and disables the source.
+    // The callback never drops its own timer - the next `syncGuideTimer()` does.
+    // `setOneShot()` is explicit because a non-sd-event backend may not default to
+    // one-shot (RESEARCH A5).
+    guideTimer_ = engine_->instance()->eventLoop().addTimeEvent(
+        CLOCK_MONOTONIC, now(CLOCK_MONOTONIC) + usec,
+        1, [this](EventSourceTime *, uint64_t) {
+            if (guideShown_) {
+                updatePreedit();
+            }
+            return true;
+        });
+    guideTimer_->setOneShot();
 }
 
 void SekkaState::updateRegistrationPanel() {
