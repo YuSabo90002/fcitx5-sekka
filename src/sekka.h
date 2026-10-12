@@ -6,6 +6,7 @@
 #ifndef SEKKA_H
 #define SEKKA_H
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -73,6 +74,7 @@ char *sekka_context_get_registration_prompt(SekkaContextFfi *ctx);
 void sekka_context_finalize_for_reset(SekkaContextFfi *ctx);
 // Real-time guide (Phase 16, GUIDE-01).
 char *sekka_context_get_guide(SekkaContextFfi *ctx);
+int sekka_context_guide_remaining_ms(SekkaContextFfi *ctx);
 void sekka_free_candidate_list(char **candidates, int count);
 void sekka_free_string(char *str);
 const char *sekka_get_version(void);
@@ -115,6 +117,16 @@ inline Text guideAuxUpText(char *guide) {
         sekka_free_string(guide);
     }
     return text;
+}
+
+/// D-229 (Phase 16): the wait, in microseconds, of the one-shot timer that clears the
+/// real-time guide, from the value `sekka_context_guide_remaining_ms` returned; 0
+/// means no timer, because the window is closed or has run out. The product is taken
+/// in `uint64_t`, so even `INT_MAX` cannot overflow. Pure and free of any fcitx
+/// instance on purpose, so ctest pins it (D-233); `SekkaState::syncGuideTimer()`
+/// (Phase 16, plan 03) is its caller.
+inline uint64_t guideTimerDelayUsec(int remainingMs) {
+    return remainingMs > 0 ? static_cast<uint64_t>(remainingMs) * 1000 : 0;
 }
 
 class SekkaEngine;
