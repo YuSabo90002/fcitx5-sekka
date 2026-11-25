@@ -18,6 +18,16 @@ input decides what kind of conversion happens.
 | `Kanji` + Ctrl-J | 漢字 |
 | `kanJi` + Ctrl-J | 感じ (with okurigana) |
 | `OkonaU` + Ctrl-J | 行う |
+| `KAnji` + Ctrl-J | 漢字 (rescues a Shift held too long; same as `Kanji`) |
+
+When the input starts with an uppercase letter and the part before the second uppercase letter
+(the stem) has not produced a single complete kana yet (consonants only; a lone `n` also counts
+as a pending consonant), that second uppercase letter is treated as lowercase. This is the same
+rule as SKK (`SHIneru` is the same as `Shineru`, `NAka` as `Naka`, `KAnJi` as `KanJi`). If the
+stem already has a kana, the letter starts okurigana as before (`AU` → 合う), and an input that
+starts in lowercase such as `kAnji` is unchanged. The typed letters are not rewritten, so
+Ctrl-L during reselection or committing the romaji as it is gives `KAnji`. There is no setting
+for it.
 
 Ctrl-J means three different things depending on the state:
 
@@ -55,6 +65,23 @@ when the 30 seconds run out, when you press Ctrl-G, or when the focus moves away
 appear again until the next Ctrl-J. Ctrl-G's other effects (committing the romaji as it is,
 cancelling a reselection) are unchanged. There is no setting for it.
 
+Pressing Ctrl-R during a conversion (while the first candidate is displayed or during
+reselection) starts word registration. The reading is the romaji you typed, turned into kana,
+and is shown at the application's input position. The word to register is built with Sekka's
+own conversion (romaji input, Ctrl-J, reselection) and is shown on the top line of the input
+panel. Pressing Ctrl-R again while building it registers that part as well (there is no limit
+on the depth). Enter stores the (reading, word) pair in the user dictionary and commits the
+word to the application; the registered word becomes the first candidate the next time you
+convert that reading. Cancelling with Esc (or Ctrl-G) returns to the state right before
+Ctrl-R, and moving the focus away ends registration without committing anything. Ctrl-R does
+nothing for a conversion with okurigana.
+
+While Sekka is active, a printable key typed with Alt held down is committed as the character
+without Alt (it does not reach the editor's key bindings). If a preedit, a first candidate or
+a reselection is still pending, the character is appended to it and committed together. Keys
+that do not produce a character, such as Enter, Esc, BackSpace, Tab and the arrows, and Alt
+combined with Ctrl or Super are forwarded to the application as before.
+
 ## Dependencies
 
 - fcitx5 5.1.13 or later (the dictionaries are located through the new `StandardPaths` API; `FCITX_ADDON_FACTORY_V2` also needs 5.1.12. The 5.1.2 of Ubuntu 24.04 is too old)
@@ -67,19 +94,18 @@ cancelling a reselection) are unchanged. There is no setting for it.
 
 ## Building
 
-Install libsekka first:
+Install libsekka first, from the root of the libsekka repository (checkout):
 
 ```sh
-cd libsekka
 cargo cinstall --release --prefix=/usr --libdir=lib
 ```
 
-Then build the addon:
+Then build the addon, from the root of the fcitx5-sekka repository (checkout):
 
 ```sh
 cmake -S . -B build -DENABLE_TEST=ON
 cmake --build build
-cd build && ctest
+(cd build && ctest)
 sudo cmake --install build
 ```
 
