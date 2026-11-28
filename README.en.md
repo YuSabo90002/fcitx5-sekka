@@ -57,6 +57,17 @@ comes out as a character (`and/or` + space → and/or). A `/` typed with no roma
 out as it always did. It exists to separate Latin text from Japanese, and there is no setting
 for it.
 
+Prefixes and suffixes are typed with `>`, as in SKK. Typing `cho>` and pressing Ctrl-J shows
+the candidates for the prefix reading ちょう> (the first candidate is 超). Typing the romaji of
+the next word commits 超, and the following word is converted with another Ctrl-J (the prefix
+and the word after it are two separate conversions). For a suffix, type `>` while a converted
+word is displayed: after `nihon` Ctrl-J shows 日本, typing `>teki` commits 日本 at the `>`, and
+Ctrl-J then shows the candidates for the suffix reading >てき (the first candidate is 的), giving
+日本的. Pressing Ctrl-J again cycles through the prefix or suffix candidates. Without Ctrl-J, a
+`>` is committed as a character as it always was (`a>b` + space → a>b). The full-width ＞ is not
+treated as the marker. Suffixes with okurigana and registering prefixes or suffixes with Ctrl-R
+are not supported.
+
 For 30 seconds after Ctrl-J, each time you type romaji, the first candidate that Ctrl-J would
 give right now is shown on the top line of the input panel in the form `[日本語]` (`Nihongo` →
 [日本語], `nihongo` → [にほんご]). It is not shown while the first candidate is displayed or
@@ -75,6 +86,13 @@ word to the application; the registered word becomes the first candidate the nex
 convert that reading. Cancelling with Esc (or Ctrl-G) returns to the state right before
 Ctrl-R, and moving the focus away ends registration without committing anything. Ctrl-R does
 nothing for a conversion with okurigana.
+
+Inside the word being registered, ← and → move the cursor one character at a time, and Home and
+End move it to the start and the end (the same keys on the keypad work too). Typed kana and
+conversion results are inserted at the cursor; BackSpace deletes the character before the
+cursor and Delete the character after it. While romaji is half-typed, or while a conversion is
+displayed or being reselected, these cursor keys do nothing (nothing is committed). Outside
+registration these keys go to the application as before.
 
 While Sekka is active, a printable key typed with Alt held down is committed as the character
 without Alt (it does not reach the editor's key bindings). If a preedit, a first candidate or
