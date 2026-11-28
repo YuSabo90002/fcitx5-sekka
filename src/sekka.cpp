@@ -372,6 +372,15 @@ void SekkaState::updateRegistrationPanel() {
         sekka_free_string(wordStr);
     }
 
+    // The popup's cursor is libsekka's display cursor inside the word (a
+    // UTF-8 byte offset, as `Text::setCursor` expects); an out-of-range value
+    // falls back to the end of the word.
+    int cursorPos = sekka_context_get_preedit_cursor_pos(ctx_);
+    size_t wordCursor = word.size();
+    if (cursorPos >= 0 && static_cast<size_t>(cursorPos) <= word.size()) {
+        wordCursor = static_cast<size_t>(cursorPos);
+    }
+
     if (ic_.capabilityFlags().test(CapabilityFlag::Preedit)) {
         Text clientPreeditText;
         clientPreeditText.append(reading, TextFormatFlag::Underline);
@@ -383,7 +392,7 @@ void SekkaState::updateRegistrationPanel() {
 
         Text wordText;
         wordText.append(word);
-        wordText.setCursor(word.size());
+        wordText.setCursor(wordCursor);
         ic_.inputPanel().setPreedit(wordText);
     } else {
         // D-170 Claude's Discretion: without client-preedit support, the
@@ -395,7 +404,7 @@ void SekkaState::updateRegistrationPanel() {
 
         Text wordText;
         wordText.append(word);
-        wordText.setCursor(word.size());
+        wordText.setCursor(wordCursor);
         ic_.inputPanel().setPreedit(wordText);
     }
 

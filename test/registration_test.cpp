@@ -151,3 +151,46 @@ TEST(SekkaRegistrationTest, FinalizeForResetCommitsTheOutermostReading) {
 TEST(SekkaRegistrationTest, FinalizeForResetIsNullSafe) {
     sekka_context_finalize_for_reset(nullptr);
 }
+
+// Registration cursor (M004): after Left, `sekka_context_get_preedit_cursor_pos`
+// points into the middle of the word being assembled, as a UTF-8 byte offset
+// over multi-byte text - the value `updateRegistrationPanel` hands to
+// `Text::setCursor`. Typing then goes in at that cursor.
+TEST(SekkaRegistrationTest, LeftMovesTheCursorIntoTheMiddleOfTheWord) {
+    auto *ctx = sekka_context_new();
+    ASSERT_NE(ctx, nullptr);
+
+    sekka_context_process_key_event(ctx, 'K', 0, 0);
+    sekka_context_process_key_event(ctx, 'a', 0, 0);
+    sekka_context_trigger(ctx);
+    ASSERT_EQ(sekka_context_process_key_event(ctx, 'r', 0x4, 0), 1);
+
+    for (char ch : std::string("Nihon")) {
+        sekka_context_process_key_event(ctx, static_cast<unsigned char>(ch), 0,
+                                        0);
+    }
+    sekka_context_trigger(ctx);
+    sekka_context_process_key_event(ctx, '+', 0, 0);
+
+    char *preedit = sekka_context_get_preedit(ctx);
+    ASSERT_NE(preedit, nullptr);
+    EXPECT_STREQ(preedit, "にほん+");
+    sekka_free_string(preedit);
+    EXPECT_EQ(sekka_context_get_preedit_cursor_pos(ctx), 10);
+
+    // Left twice: the cursor sits between ほ and ん (two 3-byte characters).
+    EXPECT_EQ(sekka_context_process_key_event(ctx, 0xFF51, 0, 0), 1);
+    EXPECT_EQ(sekka_context_process_key_event(ctx, 0xFF51, 0, 0), 1);
+    EXPECT_EQ(sekka_context_get_preedit_cursor_pos(ctx), 6);
+    EXPECT_EQ(sekka_context_take_forward_key(ctx), 0);
+
+    sekka_context_process_key_event(ctx, '#', 0, 0);
+    preedit = sekka_context_get_preedit(ctx);
+    ASSERT_NE(preedit, nullptr);
+    EXPECT_STREQ(preedit, "にほ#ん+");
+    sekka_free_string(preedit);
+    EXPECT_EQ(sekka_context_get_preedit_cursor_pos(ctx), 7);
+
+    EXPECT_EQ(sekka_context_poll_output(ctx), nullptr);
+    sekka_context_free(ctx);
+}
