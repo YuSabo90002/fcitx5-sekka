@@ -91,8 +91,11 @@ Inside the word being registered, ← and → move the cursor one character at a
 End move it to the start and the end (the same keys on the keypad work too). Typed kana and
 conversion results are inserted at the cursor; BackSpace deletes the character before the
 cursor and Delete the character after it. While romaji is half-typed, or while a conversion is
-displayed or being reselected, these cursor keys do nothing (nothing is committed). Outside
-registration these keys go to the application as before.
+displayed or being reselected, these cursor keys first commit at the cursor what typing the
+next character would commit (during reselection, the selected candidate), and then move
+(Delete deletes the character after the cursor). For example, pressing ← right after
+converting 語 commits 語 and moves the cursor before it, so converting 日本 next gives 日本語.
+Outside registration these keys go to the application as before.
 
 While Sekka is active, a printable key typed with Alt held down is committed as the character
 without Alt (it does not reach the editor's key bindings). If a preedit, a first candidate or
