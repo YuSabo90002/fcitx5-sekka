@@ -35,11 +35,34 @@ Ctrl-J means three different things depending on the state:
 - with the first candidate placed: start reselection (this is when the candidate window appears)
 - during reselection: advance to the next candidate
 
-The key assignments during reselection follow upstream: Ctrl-A kanji / Ctrl-U hiragana /
-Ctrl-I and Ctrl-K katakana / Ctrl-L half-width alphabet / Ctrl-E full-width alphabet, Enter
-to confirm and Esc to cancel. A candidate can also be committed by clicking it. Numeric
-selection by digit keys does not exist upstream and is not implemented (so no numeric labels
-are shown on the candidates either).
+The keys during reselection (while the candidate window is open) are:
+
+| Key | Action |
+|---|---|
+| Ctrl-J, Ctrl-N | next candidate |
+| Ctrl-P | previous candidate |
+| Enter, Ctrl-M | settle on the selected candidate and close the candidate window (the commit is still deferred until the next key) |
+| Esc, Ctrl-G | cancel (back to the candidate shown before reselection started) |
+| BackSpace | close the candidate window, revert to the original romaji and delete its last character |
+| Ctrl-A, Ctrl-U, Ctrl-I, Ctrl-K, Ctrl-L, Ctrl-E | switch to the kanji, hiragana, katakana, katakana, half-width alphabet or full-width alphabet candidate |
+| Ctrl-R | start word registration (see below) |
+
+Any key not in the table commits the selected candidate first and is then handled. Space and
+`q` are not special keys either: Space commits the selected candidate with a space appended
+(`Kanji` Ctrl-J Ctrl-J Space → "漢字 "), and `q` commits the selected candidate and becomes the
+romaji of the next input (unlike upstream Sekka, where Space is the next candidate and `q`
+cancels). A candidate can also be committed by clicking it. Numeric selection by digit keys
+does not exist upstream and is not implemented (so no numeric labels are shown on the
+candidates either).
+
+Right after Ctrl-J places the first candidate (the candidate window is closed), Ctrl-U
+switches the display to the hiragana candidate and Ctrl-I or Ctrl-K to the katakana
+candidate, without opening the candidate window (`Kanji` Ctrl-J Ctrl-K → カンジ). Nothing is
+committed; the switched word is committed by the next key (generated hiragana and katakana are
+not learned). If the reading has no candidate of that kind, nothing changes. Pressing Ctrl-J
+next starts reselection with the switched candidate selected. The other Ctrl + letter keys at
+this point (Ctrl-A, Ctrl-L, Ctrl-E and so on) commit the displayed word and then pass the key
+to the application.
 
 The commit is deferred until the next key that is not the trigger. That is the design that
 makes "reselect right after committing" work without having to take back text already sent to
@@ -85,7 +108,9 @@ on the depth). Enter stores the (reading, word) pair in the user dictionary and 
 word to the application; the registered word becomes the first candidate the next time you
 convert that reading. Cancelling with Esc (or Ctrl-G) returns to the state right before
 Ctrl-R, and moving the focus away ends registration without committing anything. Ctrl-R does
-nothing for a conversion with okurigana.
+nothing for a conversion with okurigana. While building the word to register, Ctrl-U, Ctrl-I
+and Ctrl-K right after Ctrl-J work the same way (only in the innermost step when registrations
+are nested), and the switched word goes in at the word's cursor with the next key.
 
 Inside the word being registered, ← and → move the cursor one character at a time, and Home and
 End move it to the start and the end (the same keys on the keypad work too). Typed kana and
