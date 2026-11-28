@@ -57,11 +57,11 @@ comes out as a character (`and/or` + space → and/or). A `/` typed with no roma
 out as it always did. It exists to separate Latin text from Japanese, and there is no setting
 for it.
 
-Prefixes and suffixes are typed with `>`, as in SKK. Typing `cho>` and pressing Ctrl-J shows
+Prefixes and suffixes are typed with `>`, as in SKK. Typing `chou>` and pressing Ctrl-J shows
 the candidates for the prefix reading ちょう> (the first candidate is 超). Typing the romaji of
 the next word commits 超, and the following word is converted with another Ctrl-J (the prefix
 and the word after it are two separate conversions). For a suffix, type `>` while a converted
-word is displayed: after `nihon` Ctrl-J shows 日本, typing `>teki` commits 日本 at the `>`, and
+word is displayed: after `Nihon` Ctrl-J shows 日本, typing `>teki` commits 日本 at the `>`, and
 Ctrl-J then shows the candidates for the suffix reading >てき (the first candidate is 的), giving
 日本的. Pressing Ctrl-J again cycles through the prefix or suffix candidates. Without Ctrl-J, a
 `>` is committed as a character as it always was (`a>b` + space → a>b). The full-width ＞ is not
