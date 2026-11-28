@@ -45,8 +45,8 @@ The commit is deferred until the next key that is not the trigger. That is the d
 makes "reselect right after committing" work without having to take back text already sent to
 the application.
 
-As of v1.4, `wi` / `we` produce うぃ / うぇ (they produced ゐ / ゑ up to v1.3). Type ゐ / ゑ
-with `yi` (or `wyi`) / `wye`. Words learned or registered up to v1.3 under a reading that
+As of 0.5.0, `wi` / `we` produce うぃ / うぇ (they produced ゐ / ゑ up to 0.4.0). Type ゐ / ゑ
+with `yi` (or `wyi`) / `wye`. Words learned or registered up to 0.4.0 under a reading that
 contains ゐ / ゑ show up when you type that reading this way, not with `wi` / `we`.
 
 Typing `/` in the middle of romaji commits the romaji typed so far as it is, without
@@ -148,7 +148,7 @@ first one it can load.
 - A path entered in "Dictionary path" is used as it is, without searching. If that path
   cannot be loaded, Sekka does not fall back to a dictionary the search would find (so that a
   typo does not go unnoticed).
-- If the v1.0 default `/usr/share/fcitx5/sekka/master-dict.db` is still in the configuration,
+- If the 0.1.0 default `/usr/share/fcitx5/sekka/master-dict.db` is still in the configuration,
   it is treated the same as empty and the search is used. The configuration file is not
   rewritten.
 - On systems without `/usr/share`, such as NixOS, no configuration is needed as long as the
